@@ -34,10 +34,10 @@ cd $ISABELLE_REPO_JEDIT_DIR
 rm -rf $ISABELLE_JEDIT_SRC && mkdir $ISABELLE_JEDIT_SRC
 
 # Copy jEdit source contents
-cp -rf isabelle/ $ISABELLE_JEDIT_SRC/
+find . -type f -iname '*.scala' -exec cp -rf \{\} "$ISABELLE_JEDIT_SRC" \;
 
 # Copy the rest of jEdit folder
-rsync --recursive --relative --times --perms --exclude "isabelle" --exclude "src" --exclude ".classpath" --exclude ".project" --exclude ".settings" . $ISABELLE_JEDIT_DIR
+rsync --recursive --relative --times --perms --exclude "*.scala" --exclude "src" --exclude ".classpath" --exclude ".project" --exclude ".settings" . $ISABELLE_JEDIT_DIR
 
 # Go to Isabelle-Pure folder
 [ ! -d "$ISABELLE_REPO_PURE_DIR" ] && echo "Missing Isabelle repo Pure folder: $ISABELLE_REPO_PURE_DIR" && exit 2
