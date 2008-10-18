@@ -25,10 +25,10 @@ AUTHOR_NAME="Makarius Wenzel"
 # e-mail in reverse to avoid spambots crawling the repository
 AUTHOR_EMAIL_REV="ten.siteks@suirakam"
 
-FILES_MATCH='lib/jedit/plugin\|src/Pure[^ ]*.scala\|build-jars'
+FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|mk-jars\|build-jars'
 
 # ensure the repo is updated to the master
-git checkout master
+#git checkout master
 
 # Go to Isabelle folder
 cd $ISABELLE_REPO
@@ -68,7 +68,7 @@ do
 #  echo "$AUTHOR"
 #  echo "$FILES"
 
-  MATCH=`echo "$FILES" | grep "$FILES_MATCH"`
+  MATCH=`echo "$FILES" | grep -i "$FILES_MATCH"`
 #  echo "$MATCH"
   if [ -n "$MATCH" ];
   then
