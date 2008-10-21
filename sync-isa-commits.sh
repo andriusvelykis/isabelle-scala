@@ -20,10 +20,15 @@ ISABELLE_REPO="$1"
 
 ISABELLE_SCALA_DIR=`pwd`
 
-AUTHOR_EXPECTED="wenzelm"
-AUTHOR_NAME="Makarius Wenzel"
+AUTHOR_MAKARIUS_ID="wenzelm"
+AUTHOR_MAKARIUS_NAME="Makarius Wenzel"
 # e-mail in reverse to avoid spambots crawling the repository
-AUTHOR_EMAIL_REV="ten.siteks@suirakam"
+AUTHOR_MAKARIUS_EMAIL_REV="ten.siteks@suirakam"
+AUTHOR_IMMLER_ID=`echo "ed.mut.ni@relmmi" | rev`
+AUTHOR_IMMLER_NAME="Fabian Immler"
+AUTHOR_IMMLER_EMAIL_REV="ed.mut.ni@relmmi"
+
+
 
 FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|mk-jars\|build-jars'
 
@@ -73,7 +78,13 @@ do
   if [ -n "$MATCH" ];
   then
   
-    [ "$AUTHOR" != "$AUTHOR_EXPECTED" ] && echo "Unexpected author found: $AUTHOR. Expected: $AUTHOR_EXPECTED" && exit 2;
+    AUTHOR_NAME=""
+    AUTHOR_EMAIL_REV=""
+    [ "$AUTHOR" == "$AUTHOR_MAKARIUS_ID" ] && AUTHOR_NAME="$AUTHOR_MAKARIUS_NAME" && AUTHOR_EMAIL_REV="$AUTHOR_MAKARIUS_EMAIL_REV";
+    
+    [ "$AUTHOR" == "$AUTHOR_IMMLER_ID" ] && AUTHOR_NAME="$AUTHOR_IMMLER_NAME" && AUTHOR_EMAIL_REV="$AUTHOR_IMMLER_EMAIL_REV";
+  
+    [ -z "$AUTHOR_NAME" ] && echo "Unexpected author found: $AUTHOR." && exit 2;
     
     echo "Picking revision $r by $AUTHOR."
     
