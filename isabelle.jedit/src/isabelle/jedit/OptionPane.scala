@@ -1,9 +1,3 @@
-/*
- * Editor pane for plugin options
- *
- * @author Johannes Hölzl, TU Munich
- */
-
 package isabelle.jedit
 
 import java.lang.Integer
@@ -15,10 +9,12 @@ import java.awt.event.{ ActionListener, ActionEvent }
 import javax.swing.{ JTextField, JButton, JPanel, JLabel, JFileChooser, 
                      JSpinner, SwingUtilities, JComboBox }
 
+import isabelle.IsabelleSystem
+
 import org.gjt.sp.jedit.AbstractOptionPane
 
 class OptionPane extends AbstractOptionPane("isabelle") {
-  import Isabelle.property
+  import Plugin.property
   
   var pathName = new JTextField()
   var fontSize = new JSpinner()
@@ -57,12 +53,14 @@ class OptionPane extends AbstractOptionPane("isabelle") {
     })
 
     addComponent(property("logic.title"), {
-      for (name <- Isabelle.system.find_logics()) {
+      val logics : Array[Object] = 
+        (IsabelleSystem.isabelle_tool("findlogics") _1).split("\\s").asInstanceOf[Array[Object]]
+      for (name <- logics) {
         logicName.addItem(name)
         if (name == property("logic"))
           logicName.setSelectedItem(name)
       }
-
+      
       logicName
     })
   }
@@ -75,7 +73,7 @@ class OptionPane extends AbstractOptionPane("isabelle") {
       property("font-size", size.toString)
       SwingUtilities invokeLater new Runnable() {
         override def run() = 
-          Isabelle.plugin.set_font(name, size.asInstanceOf[Integer].intValue)
+          Plugin.plugin.setFont(name, size.asInstanceOf[Integer].intValue)
       }
     }
     

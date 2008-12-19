@@ -1,7 +1,8 @@
 /*
- * Text selection for XHTML renderer
+ * SelectionActions.scala
  *
- * @author Fabian Immler, TU Munich
+ * To change this template, choose Tools | Template Manager
+ * and open the template in the editor.
  */
 
 package isabelle.jedit
@@ -25,22 +26,24 @@ class SelectionActions extends SelectionHighlighter with KeyListener{
 
   def copyaction {
       val selected_string = getSelectionRange.toString
-      val encoded = Isabelle.symbols.encode(selected_string)
+      val encoded = VFS.converter.encode (selected_string)
       val clipboard = java.awt.Toolkit.getDefaultToolkit().getSystemClipboard;
       val transferable = new java.awt.datatransfer.StringSelection(selected_string)
       clipboard.setContents(transferable, null)
   }
   
-  override def keyPressed(e: KeyEvent) {
+  override def keyPressed (e: KeyEvent) {
     if(e.getKeyCode == KeyEvent.VK_ENTER) {
       copyaction
       e.consume
     }
   }
-  
-  override def keyReleased(e: KeyEvent) {
+  override def keyReleased (e: KeyEvent) {
+    
+  }
+  override def keyTyped (e: KeyEvent) {
+    
   }
 
-  override def keyTyped(e: KeyEvent) {
-  }
+
 }

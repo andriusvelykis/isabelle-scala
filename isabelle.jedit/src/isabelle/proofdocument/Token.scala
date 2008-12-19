@@ -1,10 +1,3 @@
-/*
- * Document tokens as text ranges
- *
- * @author Johannes Hölzl, TU Munich
- * @author Fabian Immler, TU Munich
- */
-
 package isabelle.proofdocument
 
 object Token {

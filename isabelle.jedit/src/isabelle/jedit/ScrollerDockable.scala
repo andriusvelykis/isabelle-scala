@@ -1,21 +1,19 @@
 /*
- * Dockable window with scrollable messages
+ * ScrollerDockable.scala
  *
- * @author Fabian Immler, TU Munich
  */
 
 package isabelle.jedit
 
-
+import isabelle.utils.EventSource
 import isabelle.IsabelleProcess.Result
-import isabelle.renderer.UserAgent
-
+import isabelle.YXML.parse_failsafe
 
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
-import java.awt.{BorderLayout, Adjustable, Dimension}
-import java.awt.event.{ActionListener, ActionEvent, AdjustmentListener, AdjustmentEvent, ComponentListener, ComponentEvent}
-import javax.swing.{JFrame, JPanel, JRadioButton, JScrollBar, JTextArea, Timer}
+import java.awt.{ BorderLayout, Adjustable }
+import java.awt.event.{ ActionListener, ActionEvent, AdjustmentListener, AdjustmentEvent, ComponentListener, ComponentEvent }
+import javax.swing.{ JFrame, JPanel, JRadioButton, JScrollBar, JTextArea, Timer }
 
 import org.w3c.dom.Document
 
@@ -23,8 +21,6 @@ import org.xhtmlrenderer.simple.XHTMLPanel
 import org.xhtmlrenderer.context.AWTFontResolver
 
 import org.gjt.sp.jedit.View
-import org.gjt.sp.jedit.gui.DockableWindowManager
-
 
 trait Renderer[U, R] {
   def render (u: U): R
@@ -103,8 +99,8 @@ class InfoPanel extends JPanel {
   def setText(s: String) {
     message_ind.setText(s)
   }
+  
 }
-
 
 class ScrollerDockable(view : View, position : String) extends JPanel with AdjustmentListener {
 
@@ -120,10 +116,7 @@ class ScrollerDockable(view : View, position : String) extends JPanel with Adjus
   vscroll.setUnitIncrement(subunits / 3)
   vscroll.setBlockIncrement(subunits)
   vscroll.addAdjustmentListener(this)
-
-  if (position == DockableWindowManager.FLOATING)
-    setPreferredSize(new Dimension(500, 250))
-
+  
   setLayout(new BorderLayout())
   add (vscroll, BorderLayout.EAST)
   add (message_panel, BorderLayout.CENTER)
@@ -173,7 +166,7 @@ class ScrollerDockable(view : View, position : String) extends JPanel with Adjus
 
   
   // TODO: register
-  //Isabelle.plugin.prover.allInfo.add(add_result(_))
+  //Plugin.plugin.prover.allInfo.add(add_result(_))
 }
 
 //Concrete Implementations
@@ -220,15 +213,15 @@ class ResultToPanelRenderer extends Renderer[Result, XHTMLPanel]{
     val panel = new XHTMLPanel(new UserAgent())
     val fontResolver =
       panel.getSharedContext.getFontResolver.asInstanceOf[AWTFontResolver]
-    if (Isabelle.plugin.font != null)
-      fontResolver.setFontMapping("Isabelle", Isabelle.plugin.font)
+    if (Plugin.plugin.viewFont != null)
+      fontResolver.setFontMapping("Isabelle", Plugin.plugin.viewFont)
 
-    Isabelle.plugin.font_changed += (font => {
-      if (Isabelle.plugin.font != null)
-        fontResolver.setFontMapping("Isabelle", Isabelle.plugin.font)
+    Plugin.plugin.viewFontChanged.add(font => {
+      if (Plugin.plugin.viewFont != null)
+        fontResolver.setFontMapping("Isabelle", Plugin.plugin.viewFont)
       panel.relayout()
     })
-    val tree = YXML.parse_failsafe(Isabelle.symbols.decode(r.result))
+    val tree = parse_failsafe(VFS.converter.decode(r.result))
     val document = XML.document(tree)
     panel.setDocument(document, UserAgent.baseURL)
     val sa = new SelectionActions
@@ -244,7 +237,7 @@ class ResultToPanelRenderer extends Renderer[Result, XHTMLPanel]{
     panel.doDocumentLayout (panel.getGraphics) //lay out, preferred size is set then
     // if there are thousands of empty panels, all have to be rendered -
     // but this takes time (even for empty panels); therefore minimum size
-    panel.setPreferredSize(new java.awt.Dimension(width, Math.max(25, panel.getPreferredSize.getHeight.toInt)))
+    panel.setPreferredSize(new java.awt.Dimension(width,Math.max(25, panel.getPreferredSize.getHeight.toInt)))
   }
 
 }

@@ -1,13 +1,8 @@
-/*
- * Document as list of commands
- *
- * @author Johannes Hölzl, TU Munich
- */
-
 package isabelle.prover
 
-import isabelle.proofdocument.{ProofDocument, Token, Text}
+import isabelle.proofdocument.{ ProofDocument, Token, Text }
 
+import isabelle.utils.EventSource
 
 object Document {
   class StructureChange(val beforeChange : Command,
@@ -15,37 +10,36 @@ object Document {
                         val removedCommands : List[Command])
 }
 
-
 class Document(text : Text, val prover : Prover) extends ProofDocument[Command](text)
-{
-  val structural_changes = new EventBus[Document.StructureChange]
-
+{ 
+  val structuralChanges = new EventSource[Document.StructureChange]() 
+  
   def isStartKeyword(s : String) = prover.command_decls.contains(s)
-
+  
   def commands() = new Iterator[Command] {
     var current = firstToken
     def hasNext() = current != null
     def next() = { try {val s = current.command ; current = s.last.next ; s}
-    catch { case error : NullPointerException =>
+    catch { case error : NullPointerException => 
       System.err.println("NPE!")
       throw error
-    }
+    } 
     }
   }
 
-  def getContent(cmd : Command) = text.content(cmd.proper_start, cmd.proper_stop)
+  def getContent(cmd : Command) = text.content(cmd.properStart, cmd.properStop)
 
   def getNextCommandContaining(pos : Int) : Command = {
     for( cmd <- commands()) { if (pos < cmd.stop) return cmd }
     return null
   }
-
-  override def tokenChanged(start : Token[Command], stop : Token[Command],
+  
+  override def tokenChanged(start : Token[Command], stop : Token[Command], 
                             removed : Token[Command]) {
     var removedCommands : List[Command] = Nil
     var first : Command = null
     var last : Command = null
-
+    
     for(t <- tokens(removed)) {
       if (first == null)
         first = t.command
@@ -65,7 +59,7 @@ class Document(text : Text, val prover : Prover) extends ProofDocument[Command](
       else
         before = first.previous
     }
-
+    
     var addedCommands : List[Command] = Nil
     var scan : Token[Command] = null
     if (start != null) {
@@ -96,7 +90,7 @@ class Document(text : Text, val prover : Prover) extends ProofDocument[Command](
     }
     else
       scan = firstToken
-
+    
     var stopScan : Token[Command] = null
     if (stop != null) {
       if (stop == stop.command.first)
@@ -108,19 +102,19 @@ class Document(text : Text, val prover : Prover) extends ProofDocument[Command](
       stopScan = last.last.next
     else
       stopScan = null
-
+		
     var cmdStart : Token[Command] = null
     var cmdStop : Token[Command] = null
     var overrun = false
     var finished = false
     while (scan != null && !finished) {
-      if (scan == stopScan) {
+      if (scan == stopScan)	{
         if (scan.kind.equals(Token.Kind.COMMAND_START))
           finished = true
         else
           overrun = true
       }
-
+      
       if (scan.kind.equals(Token.Kind.COMMAND_START) && cmdStart != null && !finished) {
         if (! overrun) {
           addedCommands = new Command(this, cmdStart, cmdStop) :: addedCommands
@@ -140,19 +134,19 @@ class Document(text : Text, val prover : Prover) extends ProofDocument[Command](
           removedCommands = scan.command :: removedCommands
         last = scan.command
       }
-
+      
       if (!finished)
         scan = scan.next
     }
-
+    
     if (cmdStart != null)
       addedCommands = new Command(this, cmdStart, cmdStop) :: addedCommands
-
+    
     // relink commands
     addedCommands = addedCommands.reverse
     removedCommands = removedCommands.reverse
-
-    structural_changes.event(
-      new Document.StructureChange(before, addedCommands, removedCommands))
+    
+    structuralChanges.fire(new Document.StructureChange(before, addedCommands, 
+                                                        removedCommands))
   }
 }
