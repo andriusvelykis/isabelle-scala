@@ -94,8 +94,11 @@ class Plugin extends EBPlugin {
     }
   }
 
-  def prover_setup(buffer: JEditBuffer): Option[ProverSetup] = mapping.get(buffer)
-  def is_active(buffer: JEditBuffer) = mapping.isDefinedAt(buffer)
+  def prover_setup (buffer : JEditBuffer) : Option[ProverSetup] = mapping.get(buffer)
+  def is_active (buffer : JEditBuffer) = mapping.isDefinedAt(buffer)
+  def switch_active (view : View) = mapping.get(view.getBuffer) match {
+    case None => install(view)
+    case _ => uninstall(view)}
 
   
   // main plugin plumbing
