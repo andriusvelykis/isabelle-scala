@@ -11,7 +11,7 @@ package isabelle.prover
 import javax.swing.text.Position
 import javax.swing.tree.DefaultMutableTreeNode
 
-import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 import isabelle.proofdocument.{Text, Token, ProofDocument}
 import isabelle.jedit.{Isabelle, Plugin}
@@ -24,6 +24,8 @@ object Command {
   object Status extends Enumeration {
     val UNPROCESSED = Value("UNPROCESSED")
     val FINISHED = Value("FINISHED")
+    val REMOVE = Value("REMOVE")
+    val REMOVED = Value("REMOVED")
     val FAILED = Value("FAILED")
   }
 }
@@ -32,10 +34,7 @@ object Command {
 class Command(text: Text, val first: Token, val last: Token)
 {
   val id = Isabelle.plugin.id()
-
-
-  /* content */
-
+  
   {
     var t = first
     while (t != null) {
@@ -43,6 +42,37 @@ class Command(text: Text, val first: Token, val last: Token)
       t = if (t == last) null else t.next
     }
   }
+
+
+  /* command status */
+
+  private var _status = Command.Status.UNPROCESSED
+  def status = _status
+  def status_=(st: Command.Status.Value) = {
+    if (st == Command.Status.UNPROCESSED) {
+      // delete markup
+      for (child <- root_node.children) {
+        child.children = Nil
+      }
+    }
+    _status = st
+  }
+
+
+  /* accumulated results */
+
+  private val results = new ListBuffer[XML.Tree]
+  def add_result(tree: XML.Tree) { results += tree }
+
+  def result_document = XML.document(
+    results.toList match {
+      case Nil => XML.Elem("message", Nil, Nil)
+      case List(elem) => elem
+      case elems => XML.Elem("messages", Nil, List(elems.first, elems.last))  // FIXME all elems!?
+    }, "style")
+
+
+  /* content */
 
   override def toString = name
 
@@ -64,46 +94,13 @@ class Command(text: Text, val first: Token, val last: Token)
   }
 
 
-  /* command status */
-
-  var state_id: IsarDocument.State_ID = null
-
-  private var _status = Command.Status.UNPROCESSED
-  def status = _status
-  def status_=(st: Command.Status.Value) {
-    if (st == Command.Status.UNPROCESSED) {
-      // delete markup
-      for (child <- root_node.children) {
-        child.children = Nil
-      }
-    }
-    _status = st
-  }
-
-
-  /* results */
-
-  private val results = new mutable.ListBuffer[XML.Tree]
-  private val state_results = new mutable.ListBuffer[XML.Tree]
-  def add_result(running: Boolean, tree: XML.Tree) {
-    (if (running) state_results else results) += tree
-  }
-
-  def result_document = XML.document(
-    results.toList ::: state_results.toList match {
-      case Nil => XML.Elem("message", Nil, Nil)
-      case List(elem) => elem
-      case elems => XML.Elem("messages", Nil, elems)
-    }, "style")
-
-
-  /* markup */
+  /* markup tree */
 
   val root_node =
     new MarkupNode(this, 0, stop - start, id, Markup.COMMAND_SPAN, content)
 
   def node_from(kind: String, begin: Int, end: Int) = {
-    val markup_content = /*content.substring(begin, end)*/ ""
+    val markup_content = content.substring(begin, end)
     new MarkupNode(this, begin, end, id, kind, markup_content)
   }
 }

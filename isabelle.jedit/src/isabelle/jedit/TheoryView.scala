@@ -148,7 +148,8 @@ class TheoryView (text_area: JEditTextArea)
 
   def repaint(cmd: Command) =
   {
-    if (text_area != null) {
+    val status = cmd.status
+    if (text_area != null && status != Command.Status.REMOVE && status != Command.Status.REMOVED) {
       val start = text_area.getLineOfOffset(to_current(cmd.start))
       val stop = text_area.getLineOfOffset(to_current(cmd.stop) - 1)
       text_area.invalidateLineRange(start, stop)
