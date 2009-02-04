@@ -53,13 +53,6 @@ object DynamicTokenMarker {
         | Markup.INNER_COMMENT => 5
       case Markup.SORT | Markup.TYP | Markup.TERM | Markup.PROP
         | Markup.ATTRIBUTE | Markup.METHOD => 6
-      // ML syntax
-      case Markup.ML_KEYWORD | Markup.ML_IDENT => 8
-      case Markup.ML_TVAR => 4
-      case Markup.ML_NUMERAL => 5
-      case Markup.ML_CHAR | Markup.ML_STRING => 13
-      case Markup.ML_COMMENT => 10
-      case Markup.ML_MALFORMED => 12
       // embedded source text
       case Markup.ML_SOURCE | Markup.DOC_SOURCE | Markup.ANTIQ | Markup.ML_ANTIQ
         | Markup.DOC_ANTIQ => 7
@@ -92,30 +85,25 @@ class DynamicTokenMarker(buffer: JEditBuffer, document: ProofDocument) extends T
     def to = Isabelle.prover_setup(buffer).get.theory_view.to_current(_)
     def from = Isabelle.prover_setup(buffer).get.theory_view.from_current(_)
 
-    val commands = document.commands.dropWhile(_.stop <= from(start))
-    if(commands.hasNext) {
-      var next_x = start
-      for {
-        command <- commands.takeWhile(_.start < from(stop))
-        markup <- command.root_node.flatten
-        if(to(markup.abs_stop) > start)
-        if(to(markup.abs_start) < stop)
-        byte = DynamicTokenMarker.choose_byte(markup.kind)
-        token_start = to(markup.abs_start) - start max 0
-        token_length = to(markup.abs_stop) - to(markup.abs_start) -
-                       (start - to(markup.abs_start) max 0) -
-                       (to(markup.abs_stop) - stop max 0)
-      } {
-        if (start + token_start > next_x) 
-          handler.handleToken(line_segment, 1, next_x - start, start + token_start - next_x, context)
-        handler.handleToken(line_segment, byte, token_start, token_length, context)
-        next_x = start + token_start + token_length
-      }
-      if (next_x < stop)
-        handler.handleToken(line_segment, 1, next_x - start, stop - next_x, context)
-    } else {
-      handler.handleToken(line_segment, 1, 0, line_segment.count, context)
+    var next_x = start
+    for {
+      command <- document.commands.dropWhile(_.stop <= from(start)).takeWhile(_.start < from(stop))
+      markup <- command.root_node.flatten
+      if(to(markup.abs_stop) > start)
+      if(to(markup.abs_start) < stop)
+      byte = DynamicTokenMarker.choose_byte(markup.kind)
+      token_start = to(markup.abs_start) - start max 0
+      token_length = to(markup.abs_stop) - to(markup.abs_start) -
+                     (start - to(markup.abs_start) max 0) -
+                     (to(markup.abs_stop) - stop max 0)
+    } {
+      if (start + token_start > next_x)
+        handler.handleToken(line_segment, 1, next_x - start, start + token_start - next_x, context)
+      handler.handleToken(line_segment, byte, token_start, token_length, context)
+      next_x = start + token_start + token_length
     }
+    if (next_x < stop)
+      handler.handleToken(line_segment, 1, next_x - start, stop - next_x, context)
 
     handler.handleToken(line_segment,Token.END, line_segment.count, 0, context)
     handler.setLineContext(context)
