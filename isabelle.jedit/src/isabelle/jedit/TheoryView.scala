@@ -8,7 +8,6 @@
 
 package isabelle.jedit
 
-import scala.actors.Actor
 
 import isabelle.proofdocument.Text
 import isabelle.prover.{Prover, Command}
@@ -36,39 +35,72 @@ object TheoryView {
         case _ => Color.red
       }
   }
+
+  def choose_color(markup: String): Color = {
+    // TODO: as properties
+    markup match {
+      // logical entities
+      case Markup.TCLASS | Markup.TYCON | Markup.FIXED_DECL | Markup.FIXED | Markup.CONST_DECL
+        | Markup.CONST | Markup.FACT_DECL | Markup.FACT | Markup.DYNAMIC_FACT
+        | Markup.LOCAL_FACT_DECL | Markup.LOCAL_FACT => new Color(255, 0, 255)
+      // inner syntax
+      case Markup.TFREE | Markup.FREE => Color.blue
+      case Markup.TVAR | Markup.SKOLEM | Markup.BOUND | Markup.VAR => Color.green
+      case Markup.NUM | Markup.FLOAT | Markup.XNUM | Markup.XSTR | Markup.LITERAL
+        | Markup.INNER_COMMENT => new Color(255, 128, 128)
+      case Markup.SORT | Markup.TYP | Markup.TERM | Markup.PROP
+        | Markup.ATTRIBUTE | Markup.METHOD => Color.yellow
+      // embedded source text
+      case Markup.ML_SOURCE | Markup.DOC_SOURCE | Markup.ANTIQ | Markup.ML_ANTIQ
+        | Markup.DOC_ANTIQ => new Color(0, 192, 0)
+      // outer syntax
+      case Markup.IDENT | Markup.COMMAND | Markup.KEYWORD => Color.blue
+      case Markup.VERBATIM => Color.green
+      case Markup.COMMENT => Color.gray
+      case Markup.CONTROL => Color.white
+      case Markup.MALFORMED => Color.red
+      case Markup.STRING | Markup.ALTSTRING => Color.orange
+      // other
+      case _ => Color.white
+    }
+  }
 }
 
 
-class TheoryView (text_area: JEditTextArea, document_actor: Actor)
-    extends TextAreaExtension with BufferListener {
+class TheoryView (text_area: JEditTextArea)
+    extends TextAreaExtension with Text with BufferListener {
 
   private val buffer = text_area.getBuffer
   private val prover = Isabelle.prover_setup(buffer).get.prover
   buffer.addBufferListener(this)
 
 
-  private var col: Text.Change = null
+  private var col: Text.Changed = null
 
   private val col_timer = new Timer(300, new ActionListener() {
-    override def actionPerformed(e: ActionEvent) = commit
+    override def actionPerformed(e: ActionEvent) = commit()
   })
 
   col_timer.stop
   col_timer.setRepeats(true)
 
 
-  private val phase_overview = new PhaseOverviewPanel(prover, to_current(_))
+  private val phase_overview = new PhaseOverviewPanel(prover)
 
 
   /* activation */
 
-  Isabelle.plugin.font_changed += (_ => update_styles)
+  Isabelle.plugin.font_changed += (_ => update_font())
 
-  private def update_styles = {
+  private def update_font() = {
     if (text_area != null) {
       if (Isabelle.plugin.font != null) {
-        text_area.getPainter.setStyles(DynamicTokenMarker.reload_styles)
-        repaint_all
+        val painter = text_area.getPainter
+        painter.setStyles(painter.getStyles.map(style =>
+          new SyntaxStyle(style.getForegroundColor, style.getBackgroundColor, Isabelle.plugin.font)
+        ))
+        painter.setFont(Isabelle.plugin.font)
+        repaint_all()
       }
     }
   }
@@ -87,9 +119,7 @@ class TheoryView (text_area: JEditTextArea, document_actor: Actor)
     phase_overview.textarea = text_area
     text_area.addLeftOfScrollBar(phase_overview)
     text_area.getPainter.addExtension(TextAreaPainter.LINE_BACKGROUND_LAYER + 1, this)
-    buffer.setTokenMarker(new DynamicTokenMarker(buffer, prover.document))
-    update_styles
-    document_actor ! new Text.Change(0,buffer.getText(0, buffer.getLength),0)
+    update_font()
   }
 
   def deactivate() = {
@@ -104,16 +134,16 @@ class TheoryView (text_area: JEditTextArea, document_actor: Actor)
   val repaint_delay = new isabelle.utils.Delay(100, () => repaint_all())
   prover.command_info += (_ => repaint_delay.delay_or_ignore())
 
-  def from_current (pos: Int) =
+  private def from_current(pos: Int) =
     if (col != null && col.start <= pos)
-      if (pos < col.start + col.added.length) col.start
-      else pos - col.added.length + col.removed
+      if (pos < col.start + col.added) col.start
+      else pos - col.added + col.removed
     else pos
 
-  def to_current (pos : Int) =
+  private def to_current(pos : Int) =
     if (col != null && col.start <= pos)
       if (pos < col.start + col.removed) col.start
-      else pos + col.added.length - col.removed
+      else pos + col.added - col.removed
     else pos
 
   def repaint(cmd: Command) =
@@ -142,8 +172,7 @@ class TheoryView (text_area: JEditTextArea, document_actor: Actor)
       if (finish < buffer.getLength) text_area.offsetToXY(finish)
       else {
         val p = text_area.offsetToXY(finish - 1)
-        val metrics = text_area.getPainter.getFontMetrics
-        p.x = p.x + (metrics.charWidth(' ') max metrics.getMaxAdvance)
+        p.x = p.x + text_area.getPainter.getFontMetrics.charWidth(' ')
         p
       }
 
@@ -164,10 +193,9 @@ class TheoryView (text_area: JEditTextArea, document_actor: Actor)
 
     val metrics = text_area.getPainter.getFontMetrics
     var e = prover.document.find_command_at(from_current(start))
-    val commands = prover.document.commands.dropWhile(_.stop <= from_current(start)).
-      takeWhile(c => to_current(c.start) < end)
+
     // encolor phase
-    for (e <- commands) {
+    while (e != null && to_current(e.start) < end) {
       val begin = start max to_current(e.start)
       val finish = end - 1 min to_current(e.stop)
       encolor(gfx, y, metrics.getHeight, begin, finish, TheoryView.choose_color(e), true)
@@ -175,28 +203,37 @@ class TheoryView (text_area: JEditTextArea, document_actor: Actor)
       // paint details of command
       for (node <- e.root_node.dfs) {
         val begin = to_current(node.start + e.start)
-        val finish = to_current(node.stop + e.start)
+        val finish = to_current(node.end + e.start)
         if (finish > start && begin < end) {
-          encolor(gfx, y + metrics.getHeight - 2, 1, begin max start, finish min end - 1,
-            DynamicTokenMarker.choose_color(node.kind), true)
+          encolor(gfx, y + metrics.getHeight - 4, 2, begin max start, finish min end,
+            TheoryView.choose_color(node.short), true)
         }
       }
+      e = e.next
     }
 
     gfx.setColor(saved_color)
   }
 
+
+  /* Text methods */
+
+  def content(start: Int, stop: Int) = buffer.getText(start, stop - start)
+  def length = buffer.getLength
+  val changes = new EventBus[Text.Changed]
+
+
   /* BufferListener methods */
 
-  private def commit {
+  private def commit() {
     if (col != null)
-      document_actor ! col
+      changes.event(col)
     col = null
     if (col_timer.isRunning())
       col_timer.stop()
   }
 
-  private def delay_commit {
+  private def delay_commit() {
     if (col_timer.isRunning())
       col_timer.restart()
     else
@@ -205,50 +242,51 @@ class TheoryView (text_area: JEditTextArea, document_actor: Actor)
 
 
   override def contentInserted(buffer: JEditBuffer,
-    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
-
-  override def contentRemoved(buffer: JEditBuffer,
-    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
-
-  override def preContentInserted(buffer: JEditBuffer,
-    start_line: Int, offset: Int, num_lines: Int, length: Int) =
+    start_line: Int, offset: Int, num_lines: Int, length: Int)
   {
-    val text = buffer.getText(offset, length)
+/*
     if (col == null)
-      col = new Text.Change(offset, text, 0)
-    else if (col.start <= offset && offset <= col.start + col.added.length)
-      col = new Text.Change(col.start, col.added + text, col.removed)
+      col = new Text.Changed(offset, length, 0)
+    else if (col.start <= offset && offset <= col.start + col.added)
+      col = new Text.Changed(col.start, col.added + length, col.removed)
     else {
-      commit
-      col = new Text.Change(offset, text, 0)
+      commit()
+      col = new Text.Changed(offset, length, 0)
     }
-    delay_commit
+    delay_commit()
+*/
+    changes.event(new Text.Changed(offset, length, 0))
   }
 
   override def preContentRemoved(buffer: JEditBuffer,
     start_line: Int, start: Int, num_lines: Int, removed: Int) =
   {
+/*
     if (col == null)
-      col = new Text.Change(start, "", removed)
-    else if (col.start > start + removed || start > col.start + col.added.length) {
-      commit
-      col = new Text.Change(start, "", removed)
+      col = new Text.Changed(start, 0, removed)
+    else if (col.start > start + removed || start > col.start + col.added) {
+      commit()
+      col = new Text.Changed(start, 0, removed)
     }
     else {
-/*      val offset = start - col.start
-      val diff = col.added.length - removed
+      val offset = start - col.start
+      val diff = col.added - removed
       val (added, add_removed) =
         if (diff < offset)
           (offset max 0, diff - (offset max 0))
         else
           (diff - (offset min 0), offset min 0)
-      col = new Text.Changed(start min col.start, added, col.removed - add_removed)*/
-      commit
-      col = new Text.Change(start, "", removed)
+      col = new Text.Changed(start min col.start, added, col.removed - add_removed)
     }
-    delay_commit
+    delay_commit()
+*/
+    changes.event(new Text.Changed(start, 0, removed))
   }
 
+  override def contentRemoved(buffer: JEditBuffer,
+    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
+  override def preContentInserted(buffer: JEditBuffer,
+    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
   override def bufferLoaded(buffer: JEditBuffer) { }
   override def foldHandlerChanged(buffer: JEditBuffer) { }
   override def foldLevelChanged(buffer: JEditBuffer, start_line: Int, end_line: Int) { }

@@ -32,9 +32,10 @@ class IsabelleSideKickParser extends SideKickParser("isabelle") {
     val prover_setup = Isabelle.plugin.prover_setup(buffer)
     if (prover_setup.isDefined) {
         val document = prover_setup.get.prover.document
-        for (command <- document.commands)
-          data.root.add(command.root_node.swing_node)
-        
+        val commands = document.commands
+        while (!stopped && commands.hasNext) {
+          data.root.add(commands.next.root_node.swing_node)
+        }
         if (stopped) data.root.add(new DefaultMutableTreeNode("<parser stopped>"))
     } else {
       data.root.add(new DefaultMutableTreeNode("<buffer inactive>"))
@@ -50,7 +51,7 @@ class IsabelleSideKickParser extends SideKickParser("isabelle") {
   override def canCompleteAnywhere = true
   override def getInstantCompletionTriggers = "\\"
 
-  override def complete(pane: EditPane, caret: Int): SideKickCompletion = null /*{
+  override def complete(pane: EditPane, caret: Int): SideKickCompletion = {
     val buffer = pane.getBuffer
     val ps = Isabelle.prover_setup(buffer)
     if (ps.isDefined) {
@@ -82,7 +83,7 @@ class IsabelleSideKickParser extends SideKickParser("isabelle") {
       }
       return new IsabelleSideKickCompletion(pane.getView, text, list, descriptions)
     } else return null
-  }*/
+  }
 
 }
 

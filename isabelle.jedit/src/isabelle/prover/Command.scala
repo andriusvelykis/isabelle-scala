@@ -29,19 +29,40 @@ object Command {
 }
 
 
-class Command(val tokens: List[Token])
+class Command(text: Text, val first: Token, val last: Token)
 {
   val id = Isabelle.plugin.id()
 
+
   /* content */
+
+  {
+    var t = first
+    while (t != null) {
+      t.command = this
+      t = if (t == last) null else t.next
+    }
+  }
 
   override def toString = name
 
-  val name = tokens.head.content
-  val content:String = Token.string_from_tokens(tokens.takeWhile(_.kind != Token.Kind.COMMENT))
+  val name = text.content(first.start, first.stop)
+  val content = text.content(proper_start, proper_stop)
 
-  def start = tokens.first.start
-  def stop = tokens.last.stop
+  def next = if (last.next != null) last.next.command else null
+  def prev = if (first.prev != null) first.prev.command else null
+
+  def start = first.start
+  def stop = last.stop
+
+  def proper_start = start
+  def proper_stop = {
+    var i = last
+    while (i != first && i.kind == Token.Kind.COMMENT)
+      i = i.prev
+    i.stop
+  }
+
 
   /* command status */
 
@@ -51,6 +72,7 @@ class Command(val tokens: List[Token])
   def status = _status
   def status_=(st: Command.Status.Value) {
     if (st == Command.Status.UNPROCESSED) {
+      state_results.clear
       // delete markup
       for (child <- root_node.children) {
         child.children = Nil
@@ -64,7 +86,7 @@ class Command(val tokens: List[Token])
 
   private val results = new mutable.ListBuffer[XML.Tree]
   private val state_results = new mutable.ListBuffer[XML.Tree]
-  def add_result(running: Boolean, tree: XML.Tree) {
+  def add_result(running: Boolean, tree: XML.Tree) = synchronized {
     (if (running) state_results else results) += tree
   }
 
@@ -82,7 +104,7 @@ class Command(val tokens: List[Token])
     new MarkupNode(this, 0, stop - start, id, Markup.COMMAND_SPAN, content)
 
   def node_from(kind: String, begin: Int, end: Int) = {
-    val markup_content = content.substring(begin, end)
+    val markup_content = /*content.substring(begin, end)*/ ""
     new MarkupNode(this, begin, end, id, kind, markup_content)
   }
 }

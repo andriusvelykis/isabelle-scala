@@ -8,7 +8,11 @@ package isabelle.proofdocument
 
 
 object Text {
-  case class Change(start: Int, val added: String, val removed: Int) {
-    override def toString = "start: " + start + " added: " + added + " removed: " + removed
-  }
+  case class Changed(val start: Int, val added: Int, val removed: Int)
+}
+
+trait Text {
+  def content(start: Int, stop: Int): String
+  def length: Int
+  def changes: EventBus[Text.Changed]
 }
