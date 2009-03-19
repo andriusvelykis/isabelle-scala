@@ -8,6 +8,7 @@
 
 package isabelle.jedit
 
+import scala.actors.Actor
 
 import isabelle.proofdocument.Text
 import isabelle.prover.{Prover, Command}
@@ -38,15 +39,15 @@ object TheoryView {
 }
 
 
-class TheoryView (text_area: JEditTextArea)
-    extends TextAreaExtension with Text with BufferListener {
+class TheoryView (text_area: JEditTextArea, document_actor: Actor)
+    extends TextAreaExtension with BufferListener {
 
   private val buffer = text_area.getBuffer
   private val prover = Isabelle.prover_setup(buffer).get.prover
   buffer.addBufferListener(this)
 
 
-  private var col: Text.Changed = null
+  private var col: Text.Change = null
 
   private val col_timer = new Timer(300, new ActionListener() {
     override def actionPerformed(e: ActionEvent) = commit
@@ -66,7 +67,7 @@ class TheoryView (text_area: JEditTextArea)
   private def update_styles = {
     if (text_area != null) {
       if (Isabelle.plugin.font != null) {
-        text_area.getPainter.setStyles(DynamicTokenMarker.styles)
+        text_area.getPainter.setStyles(DynamicTokenMarker.reload_styles)
         repaint_all
       }
     }
@@ -88,6 +89,7 @@ class TheoryView (text_area: JEditTextArea)
     text_area.getPainter.addExtension(TextAreaPainter.LINE_BACKGROUND_LAYER + 1, this)
     buffer.setTokenMarker(new DynamicTokenMarker(buffer, prover.document))
     update_styles
+    document_actor ! new Text.Change(0,buffer.getText(0, buffer.getLength),0)
   }
 
   def deactivate() = {
@@ -104,14 +106,14 @@ class TheoryView (text_area: JEditTextArea)
 
   def from_current (pos: Int) =
     if (col != null && col.start <= pos)
-      if (pos < col.start + col.added) col.start
-      else pos - col.added + col.removed
+      if (pos < col.start + col.added.length) col.start
+      else pos - col.added.length + col.removed
     else pos
 
   def to_current (pos : Int) =
     if (col != null && col.start <= pos)
       if (pos < col.start + col.removed) col.start
-      else pos + col.added - col.removed
+      else pos + col.added.length - col.removed
     else pos
 
   def repaint(cmd: Command) =
@@ -162,9 +164,10 @@ class TheoryView (text_area: JEditTextArea)
 
     val metrics = text_area.getPainter.getFontMetrics
     var e = prover.document.find_command_at(from_current(start))
-
+    val commands = prover.document.commands.dropWhile(_.stop <= from_current(start)).
+      takeWhile(c => to_current(c.start) < end)
     // encolor phase
-    while (e != null && to_current(e.start) < end) {
+    for (e <- commands) {
       val begin = start max to_current(e.start)
       val finish = end - 1 min to_current(e.stop)
       encolor(gfx, y, metrics.getHeight, begin, finish, TheoryView.choose_color(e), true)
@@ -178,25 +181,16 @@ class TheoryView (text_area: JEditTextArea)
             DynamicTokenMarker.choose_color(node.kind), true)
         }
       }
-      e = e.next
     }
 
     gfx.setColor(saved_color)
   }
 
-
-  /* Text methods */
-
-  def content(start: Int, stop: Int) = buffer.getText(start, stop - start)
-  def length = buffer.getLength
-  val changes = new EventBus[Text.Changed]
-
-
   /* BufferListener methods */
 
   private def commit {
     if (col != null)
-      changes.event(col)
+      document_actor ! col
     col = null
     if (col_timer.isRunning())
       col_timer.stop()
@@ -211,51 +205,50 @@ class TheoryView (text_area: JEditTextArea)
 
 
   override def contentInserted(buffer: JEditBuffer,
-    start_line: Int, offset: Int, num_lines: Int, length: Int)
+    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
+
+  override def contentRemoved(buffer: JEditBuffer,
+    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
+
+  override def preContentInserted(buffer: JEditBuffer,
+    start_line: Int, offset: Int, num_lines: Int, length: Int) =
   {
-/*
+    val text = buffer.getText(offset, length)
     if (col == null)
-      col = new Text.Changed(offset, length, 0)
-    else if (col.start <= offset && offset <= col.start + col.added)
-      col = new Text.Changed(col.start, col.added + length, col.removed)
+      col = new Text.Change(offset, text, 0)
+    else if (col.start <= offset && offset <= col.start + col.added.length)
+      col = new Text.Change(col.start, col.added + text, col.removed)
     else {
       commit
-      col = new Text.Changed(offset, length, 0)
+      col = new Text.Change(offset, text, 0)
     }
     delay_commit
-*/
-    changes.event(new Text.Changed(offset, length, 0))
   }
 
   override def preContentRemoved(buffer: JEditBuffer,
     start_line: Int, start: Int, num_lines: Int, removed: Int) =
   {
-/*
     if (col == null)
-      col = new Text.Changed(start, 0, removed)
-    else if (col.start > start + removed || start > col.start + col.added) {
+      col = new Text.Change(start, "", removed)
+    else if (col.start > start + removed || start > col.start + col.added.length) {
       commit
-      col = new Text.Changed(start, 0, removed)
+      col = new Text.Change(start, "", removed)
     }
     else {
-      val offset = start - col.start
-      val diff = col.added - removed
+/*      val offset = start - col.start
+      val diff = col.added.length - removed
       val (added, add_removed) =
         if (diff < offset)
           (offset max 0, diff - (offset max 0))
         else
           (diff - (offset min 0), offset min 0)
-      col = new Text.Changed(start min col.start, added, col.removed - add_removed)
+      col = new Text.Changed(start min col.start, added, col.removed - add_removed)*/
+      commit
+      col = new Text.Change(start, "", removed)
     }
     delay_commit
-*/
-    changes.event(new Text.Changed(start, 0, removed))
   }
 
-  override def contentRemoved(buffer: JEditBuffer,
-    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
-  override def preContentInserted(buffer: JEditBuffer,
-    start_line: Int, offset: Int, num_lines: Int, length: Int) { }
   override def bufferLoaded(buffer: JEditBuffer) { }
   override def foldHandlerChanged(buffer: JEditBuffer) { }
   override def foldLevelChanged(buffer: JEditBuffer, start_line: Int, end_line: Int) { }

@@ -15,7 +15,7 @@ import scala.collection.immutable.{TreeSet}
 import org.gjt.sp.util.Log
 
 import isabelle.jedit.Isabelle
-import isabelle.proofdocument.{StructureChange, ProofDocument, Text, Token}
+import isabelle.proofdocument.{DocumentActor, ProofDocument, Text, Token}
 import isabelle.IsarDocument
 
 
@@ -23,11 +23,12 @@ class Prover(isabelle_system: IsabelleSystem, logic: String)
 {
   /* prover process */
 
-  private val process =
+  private var process: Isar = null
+
   {
     val results = new EventBus[IsabelleProcess.Result] + handle_result
     results.logger = Log.log(Log.ERROR, null, _)
-    new IsabelleProcess(isabelle_system, results, "-m", "xsymbols", logic) with IsarDocument
+    process = new Isar(isabelle_system, results, "-m", "xsymbols", logic)
   }
 
   def stop() { process.kill }
@@ -35,13 +36,10 @@ class Prover(isabelle_system: IsabelleSystem, logic: String)
   
   /* document state information */
 
-  private val states = new mutable.HashMap[IsarDocument.State_ID, Command] with
-    mutable.SynchronizedMap[IsarDocument.State_ID, Command]
-  private val commands = new mutable.HashMap[IsarDocument.Command_ID, Command] with
-    mutable.SynchronizedMap[IsarDocument.Command_ID, Command]
-  private val document_id0 = Isabelle.plugin.id()
-  private var document_id = document_id0
-  private var document_versions = Set(document_id)
+  private val states = new mutable.HashMap[IsarDocument.State_ID, Command]
+  private val commands = new mutable.HashMap[IsarDocument.Command_ID, Command]
+  private val document0 = Isabelle.plugin.id()
+  private val document_versions = new mutable.HashSet[IsarDocument.Document_ID] + document0
 
   private var initialized = false
 
@@ -50,15 +48,13 @@ class Prover(isabelle_system: IsabelleSystem, logic: String)
 
   val decl_info = new EventBus[(String, String)]
 
-  private val keyword_decls =
-    new mutable.HashSet[String] with mutable.SynchronizedSet[String] {
+  private val keyword_decls = new mutable.HashSet[String] {
     override def +=(name: String) = {
       decl_info.event(name, OuterKeyword.MINOR)
       super.+=(name)
     }
   }
-  private val command_decls =
-    new mutable.HashMap[String, String] with mutable.SynchronizedMap[String, String] {
+  private val command_decls = new mutable.HashMap[String, String] {
     override def +=(entry: (String, String)) = {
       decl_info.event(entry)
       super.+=(entry)
@@ -85,12 +81,13 @@ class Prover(isabelle_system: IsabelleSystem, logic: String)
   val activated = new EventBus[Unit]
   val command_info = new EventBus[Command]
   val output_info = new EventBus[String]
-  var document: ProofDocument = null
+  var document_actor: DocumentActor = null
+  def document = document_actor.get
 
+  def command_change(c: Command) = Swing.now { command_info.event(c) }
 
-  private def handle_result(result: IsabelleProcess.Result): Unit = Swing.now
+  private def handle_result(result: IsabelleProcess.Result)
   {
-    def command_change(c: Command) = command_info.event(c)
     val (running, command) =
       result.props.find(p => p._1 == Markup.ID) match {
         case None => (false, null)
@@ -101,13 +98,10 @@ class Prover(isabelle_system: IsabelleSystem, logic: String)
       }
 
     if (result.kind == IsabelleProcess.Kind.STDOUT || result.kind == IsabelleProcess.Kind.STDIN)
-      output_info.event(result.toString)
+      Swing.now { output_info.event(result.result) }
     else if (result.kind == IsabelleProcess.Kind.WRITELN && !initialized) {  // FIXME !?
       initialized = true
-      if (document != null) {
-        document.activate()
-        activated.event(())
-      }
+      Swing.now { document_actor ! DocumentActor.Activate }
     }
     else {
       result.kind match {
@@ -137,35 +131,30 @@ class Prover(isabelle_system: IsabelleSystem, logic: String)
                   // document edits
                   case XML.Elem(Markup.EDITS, (Markup.ID, doc_id) :: _, edits)
                   if document_versions.contains(doc_id) =>
-                    output_info.event(result.toString)
                     for {
                       XML.Elem(Markup.EDIT, (Markup.ID, cmd_id) :: (Markup.STATE, state_id) :: _, _)
                         <- edits
+                      if (commands.contains(cmd_id))
                     } {
-                      if (commands.contains(cmd_id)) {
-                        val cmd = commands(cmd_id)
-                        if (cmd.state_id != null) states -= cmd.state_id
-                        states(state_id) = cmd
-                        cmd.state_id = state_id
-                        cmd.status = Command.Status.UNPROCESSED
-                        command_change(cmd)
-                      }
+                      val cmd = commands(cmd_id)
+                      if (cmd.state_id != null) states -= cmd.state_id
+                      states(cmd_id) = cmd
+                      cmd.state_id = state_id
+                      cmd.status = Command.Status.UNPROCESSED
+                      command_change(cmd)
                     }
 
                   // command status
                   case XML.Elem(Markup.UNPROCESSED, _, _)
                   if command != null =>
-                    output_info.event(result.toString)
                     command.status = Command.Status.UNPROCESSED
                     command_change(command)
                   case XML.Elem(Markup.FINISHED, _, _)
                   if command != null =>
-                    output_info.event(result.toString)
                     command.status = Command.Status.FINISHED
                     command_change(command)
                   case XML.Elem(Markup.FAILED, _, _)
                   if command != null =>
-                    output_info.event(result.toString)
                     command.status = Command.Status.FAILED
                     command_change(command)
 
@@ -197,37 +186,33 @@ class Prover(isabelle_system: IsabelleSystem, logic: String)
     }
   }
 
-  def set_document(text: Text, path: String): Unit = Swing.now
-  {
-    document = new ProofDocument(text, command_decls.contains(_))
-    process.ML("()")  // FIXME force initial writeln
-    process.begin_document(document_id0, path)
-    document.structural_changes += edit_document
-    // FIXME !?
-    if (initialized) {
-      document.activate()
-      activated.event(())
-    }
+  def set_document(document_actor: isabelle.proofdocument.DocumentActor, path: String) {
+    val structural_changes = new EventBus[isabelle.proofdocument.StructureChange]
+
+    this.document_actor = document_actor
+    document_actor ! DocumentActor.SetEventBus(structural_changes)
+    document_actor ! DocumentActor.SetIsCommandKeyword(command_decls.contains)
+
+    process.ML("ThyLoad.add_path " + IsabelleSyntax.encode_string(path))
+
+    structural_changes += (changes => if(initialized){
+      for (cmd <- changes.removed_commands) remove(cmd)
+      changes.added_commands.foldLeft (changes.before_change) ((p, c) => {send(p, c); Some(c)})
+    })
   }
 
-  private def edit_document(changes: StructureChange) = Swing.now
-  {
-    val old_id = document_id
-    document_id = Isabelle.plugin.id()
-    document_versions += document_id
+  private def send(prev: Option[Command], cmd: Command) {
+    cmd.status = Command.Status.UNPROCESSED
+    commands.put(cmd.id, cmd)
 
-    val removes =
-      for (cmd <- changes.removed_commands) yield {
-        commands -= cmd.id
-        if (cmd.state_id != null) states -= cmd.state_id
-        (if (cmd.prev == null) document_id0 else cmd.prev.id) -> None
-      }
-    val inserts =
-      for (cmd <- changes.added_commands) yield {
-        commands += (cmd.id -> cmd)
-        process.define_command(cmd.id, isabelle_system.symbols.encode(cmd.content))
-        (if (cmd.prev == null) document_id0 else cmd.prev.id) -> Some(cmd.id)
-      }
-    process.edit_document(old_id, document_id, removes.reverse ++ inserts)
+    val content = isabelle_system.symbols.encode(cmd.content)
+    process.create_command(cmd.id, content)
+    process.insert_command(prev match {case Some(c) => c.id case None => ""}, cmd.id)
+  }
+
+  def remove(cmd: Command) {
+    commands -= cmd.id
+    if (cmd.state_id != null) states -= cmd.state_id
+    process.remove_command(cmd.id)
   }
 }

@@ -9,7 +9,7 @@ package isabelle.jedit
 
 import isabelle.prover.{Prover, Command}
 import isabelle.renderer.UserAgent
-
+import isabelle.proofdocument.DocumentActor
 
 import org.w3c.dom.Document
 
@@ -37,17 +37,19 @@ class ProverSetup(buffer: JEditBuffer)
     prover = new Prover(Isabelle.system, Isabelle.default_logic)
 
     val buffer = view.getBuffer
-    val path = buffer.getPath
+    val dir = buffer.getDirectory
 
-    theory_view = new TheoryView(view.getTextArea)
-    prover.set_document(theory_view,
-      if (path.startsWith(Isabelle.VFS_PREFIX)) path.substring(Isabelle.VFS_PREFIX.length) else path)
+    val document_actor = new DocumentActor
+    document_actor.start
+    theory_view = new TheoryView(view.getTextArea, document_actor)
+    prover.set_document(document_actor,
+      if (dir.startsWith(Isabelle.VFS_PREFIX)) dir.substring(Isabelle.VFS_PREFIX.length) else dir)
     theory_view.activate
 
     //register output-view
     prover.output_info += (text =>
       {
-        output_text_view.append(text + "\n")
+        output_text_view.append(text)
         val dockable = view.getDockableWindowManager.getDockable("isabelle-output")
         //link process output if dockable is active
         if (dockable != null) {
