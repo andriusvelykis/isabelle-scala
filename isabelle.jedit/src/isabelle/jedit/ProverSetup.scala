@@ -40,13 +40,14 @@ class ProverSetup(buffer: JEditBuffer)
 
     theory_view = new TheoryView(view.getTextArea, prover)
     prover.set_document(theory_view.change_receiver,
-      if (path.startsWith(Isabelle.VFS_PREFIX)) path.substring(Isabelle.VFS_PREFIX.length) else path)
+      if (path.startsWith(Isabelle.VFS_PREFIX)) path.substring(Isabelle.VFS_PREFIX.length)
+      else path)
     theory_view.activate
     val MCL = TheoryView.MAX_CHANGE_LENGTH
-    for (i <- 0 to buffer.getLength / MCL) prover !
-      new isabelle.proofdocument.Text.Change(Isabelle.plugin.id(), i * MCL,
-                                             buffer.getText(i * MCL,
-                                                            MCL min buffer.getLength - i * MCL),0)
+    for (i <- 0 to buffer.getLength / MCL)
+      prover ! new isabelle.proofdocument.Text.Change(
+        Isabelle.plugin.id(), i * MCL,
+        buffer.getText(i * MCL, MCL min buffer.getLength - i * MCL),0)
 
     //register output-view
     prover.output_info += (text =>
