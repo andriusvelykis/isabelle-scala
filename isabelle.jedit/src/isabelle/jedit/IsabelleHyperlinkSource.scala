@@ -1,7 +1,8 @@
 /*
- * Hyperlink setup for Isabelle proof documents
+ * IsabelleHyperlinkSource.scala
  *
- * @author Fabian Immler, TU Munich
+ * To change this template, choose Tools | Template Manager
+ * and open the template in the editor.
  */
 
 package isabelle.jedit
@@ -19,11 +20,10 @@ import org.gjt.sp.jedit.TextUtilities
 
 import isabelle.prover.RefInfo
 
-
 class InternalHyperlink(start: Int, end: Int, line: Int, ref_offset: Int)
   extends AbstractHyperlink(start, end, line, "")
 {
-  override def click(view: View) {
+  override def click(view: View) = {
     view.getTextArea.moveCaretPosition(ref_offset)
   }
 }

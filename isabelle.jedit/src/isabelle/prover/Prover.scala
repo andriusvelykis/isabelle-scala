@@ -88,20 +88,20 @@ class Prover(isabelle_system: IsabelleSystem, logic: String) extends Actor
     if (map(xsymb).get("abbrev").isDefined) _completions += map(xsymb)("abbrev")
   }
   */
-  decl_info += (p => _completions += p._1)
+  decl_info += (k_v => _completions += k_v._1)
 
 
   /* event handling */
 
   val activated = new EventBus[Unit]
   val output_info = new EventBus[String]
-  var change_receiver: Actor = null
+  var change_receiver = null: Actor
   
   private def handle_result(result: IsabelleProcess.Result)
   {
     // helper-function (move to XML?)
     def get_attr(attributes: List[(String, String)], attr: String): Option[String] =
-      attributes.find(p => p._1 == attr).map(_._2)
+      attributes.find(kv => kv._1 == attr).map(_._2)
 
     def command_change(c: Command) = this ! c
     val (running, command) =
@@ -113,16 +113,17 @@ class Prover(isabelle_system: IsabelleSystem, logic: String) extends Actor
           else (false, null)
       }
 
-    if (result.kind == IsabelleProcess.Kind.STDOUT ||
-        result.kind == IsabelleProcess.Kind.STDIN)
+    if (result.kind == IsabelleProcess.Kind.STDOUT || result.kind == IsabelleProcess.Kind.STDIN)
       output_info.event(result.toString)
+    else if (result.kind == IsabelleProcess.Kind.WRITELN && !initialized) {  // FIXME !?
+      initialized = true
+      Swing.now { this ! ProverEvents.Activate }
+    }
     else {
       result.kind match {
 
-        case IsabelleProcess.Kind.WRITELN
-        | IsabelleProcess.Kind.PRIORITY
-        | IsabelleProcess.Kind.WARNING
-        | IsabelleProcess.Kind.ERROR =>
+        case IsabelleProcess.Kind.WRITELN | IsabelleProcess.Kind.PRIORITY
+          | IsabelleProcess.Kind.WARNING | IsabelleProcess.Kind.ERROR =>
           if (command != null) {
             if (result.kind == IsabelleProcess.Kind.ERROR)
               command.status = Command.Status.FAILED
@@ -146,15 +147,9 @@ class Prover(isabelle_system: IsabelleSystem, logic: String) extends Actor
                   case XML.Elem(Markup.KEYWORD_DECL, (Markup.NAME, name) :: _, _) =>
                     keyword_decls += name
 
-                  // process ready (after initialization)
-                  case XML.Elem(Markup.READY, _, _)
-                  if !initialized =>
-                    initialized = true
-                    Swing.now { this ! ProverEvents.Activate }
-
                   // document edits
                   case XML.Elem(Markup.EDITS, (Markup.ID, doc_id) :: _, edits)
-                  if document_versions.exists(_.id == doc_id) =>
+                  if document_versions.exists(dv => doc_id == dv.id) =>
                     output_info.event(result.toString)
                     for {
                       XML.Elem(Markup.EDIT, (Markup.ID, cmd_id) :: (Markup.STATE, state_id) :: _, _)
@@ -199,9 +194,9 @@ class Prover(isabelle_system: IsabelleSystem, logic: String) extends Actor
                           case List(XML.Elem(Markup.ML_DEF, attr, _)) =>
                             command.markup_root += command.markup_node(begin.get, end.get,
                               RefInfo(get_attr(attr, Markup.FILE),
-                                      get_attr(attr, Markup.LINE).map(_.toInt),
+                                      get_attr(attr, Markup.LINE).map(Integer.parseInt),
                                       get_attr(attr, Markup.ID),
-                                      get_attr(attr, Markup.OFFSET).map(_.toInt)))
+                                      get_attr(attr, Markup.OFFSET).map(Integer.parseInt)))
                           case _ =>
                         }
                       } else {
