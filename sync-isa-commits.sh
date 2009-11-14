@@ -25,7 +25,8 @@ AUTHOR_NAME="Makarius Wenzel"
 # e-mail in reverse to avoid spambots crawling the repository
 AUTHOR_EMAIL_REV="ten.siteks@suirakam"
 
-FILES_MATCH='lib/jedit/plugin\|src/Pure[^ ]*.scala\|build-jars'
+FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|build-jars'
+
 
 # ensure the repo is updated to the master
 git checkout master
@@ -68,7 +69,12 @@ do
 #  echo "$AUTHOR"
 #  echo "$FILES"
 
-  MATCH=`echo "$FILES" | grep "$FILES_MATCH"`
+  # stop on first jEdit encounter
+  JEDIT_MATCH=`echo "$FILES" | grep -i "jedit"`
+  [ -n "$JEDIT_MATCH" ] && echo "Found jEdit - stopping" && exit 2;
+
+  MATCH=`echo "$FILES" | grep -i "$FILES_MATCH"`
+
 #  echo "$MATCH"
   if [ -n "$MATCH" ];
   then
