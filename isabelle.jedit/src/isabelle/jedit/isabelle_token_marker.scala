@@ -99,7 +99,7 @@ object Isabelle_Token_Marker
 }
 
 
-class Isabelle_Token_Marker(model: Document_Model) extends TokenMarker
+class Isabelle_Token_Marker(buffer: JEditBuffer) extends TokenMarker
 {
   override def markTokens(prev: TokenMarker.LineContext,
       handler: TokenHandler, line_segment: Segment): TokenMarker.LineContext =
@@ -107,12 +107,13 @@ class Isabelle_Token_Marker(model: Document_Model) extends TokenMarker
     val previous = prev.asInstanceOf[Isabelle_Token_Marker.LineContext]
     val line = if (prev == null) 0 else previous.line + 1
     val context = new Isabelle_Token_Marker.LineContext(line, previous)
-    val start = model.buffer.getLineStartOffset(line)
+    val start = buffer.getLineStartOffset(line)
     val stop = start + line_segment.count
 
-    val document = model.current_document()
-    def to: Int => Int = model.to_current(document, _)
-    def from: Int => Int = model.from_current(document, _)
+    val theory_view = Isabelle.plugin.theory_view(buffer).get  // FIXME total?
+    val document = theory_view.current_document()
+    def to: Int => Int = theory_view.to_current(document, _)
+    def from: Int => Int = theory_view.from_current(document, _)
 
     var next_x = start
     var cmd = document.command_at(from(start))
