@@ -50,4 +50,4 @@ rm -rf $ISABELLE_PURE_SRC && mkdir $ISABELLE_PURE_SRC
 find . -type f -iname '*.scala' -exec cp -rf \{\} "$ISABELLE_PURE_SRC" \;
 
 # Copy the build-jars script
-cp -rf mk-jars $ISABELLE_PURE_DIR/mk-jars;
+cp -rf build-jars $ISABELLE_PURE_DIR/build-jars;
