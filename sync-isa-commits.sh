@@ -25,7 +25,7 @@ AUTHOR_NAME="Makarius Wenzel"
 # e-mail in reverse to avoid spambots crawling the repository
 AUTHOR_EMAIL_REV="ten.siteks@suirakam"
 
-FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|build-jars'
+FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|mk-jars\|build-jars'
 
 
 # ensure the repo is updated to the master
