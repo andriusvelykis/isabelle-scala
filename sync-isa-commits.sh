@@ -61,15 +61,9 @@ do
 
   cd $ISABELLE_REPO
 
-  MESSAGE=`hg log --rev $r --template '{desc}'`
-  DATE=`hg log --rev $r --template '{date|rfc822date}'`
-  AUTHOR=`hg log --rev $r --template '{author}'`
   FILES=`hg log --rev $r --template '{files}'`
   HASH=`hg log --rev $r --template '{node}'`
   
-#  echo "$MESSAGE"
-#  echo "$DATE"
-#  echo "$AUTHOR"
 #  echo "$FILES"
 
 
@@ -78,6 +72,9 @@ do
 #  echo "$MATCH"
   if [ -n "$MATCH" ];
   then
+  
+    AUTHOR=`hg log --rev $r --template '{author}'`
+#  echo "$AUTHOR"
   
     AUTHOR_NAME=""
     AUTHOR_EMAIL_REV=""
@@ -88,6 +85,11 @@ do
     [ -z "$AUTHOR_NAME" ] && echo "Unexpected author found: $AUTHOR." && exit 2;
     
     echo "Picking revision $r by $AUTHOR."
+    
+    MESSAGE=`hg log --rev $r --template '{desc}'`
+    DATE=`hg log --rev $r --template '{date|rfc822date}'`
+#  echo "$MESSAGE"
+#  echo "$DATE"
     
     NEWMESSAGE=`echo "$MESSAGE\n\nIsabelle-hg: http://isabelle.in.tum.de/repos/isabelle@$r $HASH"`
 #    echo "$NEWMESSAGE"
