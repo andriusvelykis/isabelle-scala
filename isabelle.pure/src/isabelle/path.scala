@@ -15,7 +15,7 @@ object Path
 {
   /* path elements */
 
-  private sealed abstract class Elem
+  sealed abstract class Elem
   private case class Root(val name: String) extends Elem
   private case class Basic(val name: String) extends Elem
   private case class Variable(val name: String) extends Elem
