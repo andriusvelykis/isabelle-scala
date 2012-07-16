@@ -1,4 +1,4 @@
 isabelle.jedit/bin
-isabelle.pide/bin
-isabelle.pure/bin
+isabelle.pide/target
+isabelle.pure/target
 .cache

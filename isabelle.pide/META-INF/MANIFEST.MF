@@ -1,0 +1,9 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Isabelle/PIDE
+Bundle-SymbolicName: isabelle.pide
+Bundle-Version: 2012.0.0.qualifier
+Export-Package: isabelle
+Bundle-Vendor: Isabelle
+Bundle-RequiredExecutionEnvironment: JavaSE-1.6
+Require-Bundle: org.scala-ide.scala.library;bundle-version="2.9.2"
