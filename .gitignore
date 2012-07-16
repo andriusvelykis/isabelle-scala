@@ -1,4 +1,5 @@
 isabelle.jedit/bin
-isabelle.pide/target
-isabelle.pure/target
+/target
+/.project
+/.settings
 .cache
