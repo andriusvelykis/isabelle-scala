@@ -1,5 +1,4 @@
-isabelle.jedit/bin
 /target
+/.classpath
 /.project
 /.settings
-.cache
