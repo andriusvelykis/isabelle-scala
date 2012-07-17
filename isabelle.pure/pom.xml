@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>isabelle.scala</groupId>
-    <artifactId>parent</artifactId>
+    <artifactId>isabelle.scala-parent</artifactId>
     <version>2012.0.0-SNAPSHOT</version>
   </parent>
   <artifactId>isabelle.pure</artifactId>
