@@ -24,7 +24,7 @@ AUTHOR_MAKARIUS_ID="wenzelm"
 AUTHOR_MAKARIUS_NAME="Makarius Wenzel"
 # e-mail in reverse to avoid spambots crawling the repository
 AUTHOR_MAKARIUS_EMAIL_REV="ten.siteks@suirakam"
-AUTHOR_IMMLER_ID=`echo "ed.mut.ni@relmmi" | rev`
+AUTHOR_IMMLER_ID="immler"
 AUTHOR_IMMLER_NAME="Fabian Immler"
 AUTHOR_IMMLER_EMAIL_REV="ed.mut.ni@relmmi"
 AUTHOR_KRAUSS_ID="krauss"
