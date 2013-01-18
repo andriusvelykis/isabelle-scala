@@ -9,7 +9,6 @@ optional init operation.
 package isabelle
 
 import java.io.{FileInputStream, BufferedInputStream}
-import scala.util.matching.Regex
 
 
 object Isabelle_System_UI

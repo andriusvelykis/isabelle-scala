@@ -51,7 +51,7 @@ object ML_Statistics_UI
     ML_Statistics.standard_fields.map(chart(_)).foreach(c =>
       Swing_Thread.later {
         new Frame {
-          iconImage = Isabelle_System.get_icon().getImage
+          iconImage = toolkit.getImage(Isabelle_System.get_icon())
           title = "ML statistics"
           contents = Component.wrap(new ChartPanel(c))
           visible = true

@@ -13,7 +13,6 @@ import java.io.{InputStream, OutputStream, File => JFile, BufferedReader, InputS
   BufferedWriter, OutputStreamWriter, IOException}
 import java.awt.{GraphicsEnvironment, Font}
 import java.awt.font.TextAttribute
-import javax.swing.ImageIcon
 
 import scala.io.Source
 import scala.util.matching.Regex
@@ -438,6 +437,6 @@ object Isabelle_System
 
   /* icon */
 
-  def get_icon(): ImageIcon =
-    new ImageIcon(platform_path(Path.explode("~~/lib/logo/isabelle.gif")))
+  def get_icon(): String =
+    platform_path(Path.explode("~~/lib/logo/isabelle.gif"))
 }
