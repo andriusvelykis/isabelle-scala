@@ -195,8 +195,8 @@ class Isabelle_Sidekick_Raw extends Isabelle_Sidekick("isabelle-raw", PIDE.get_r
       case Some(snapshot) =>
         val root = data.root
         for ((command, command_start) <- snapshot.node.command_range() if !stopped) {
-          snapshot.state.command_state(snapshot.version, command).markup
-            .swing_tree(root, (info: Text.Info[List[XML.Elem]]) =>
+          Markup_Tree_UI.swing_tree(snapshot.state.command_state(snapshot.version, command).markup,
+            root, (info: Text.Info[List[XML.Elem]]) =>
               {
                 val range = info.range + command_start
                 val content = command.source(info.range).replace('\n', ' ')
