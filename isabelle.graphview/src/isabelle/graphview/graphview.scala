@@ -22,9 +22,9 @@ object Graphview extends SwingApplication
     // FIXME avoid I/O etc. on Swing thread
     val graph: Model.Graph =
       try {
-        Platform.init_laf()
+        Platform_UI.init_laf()
         Isabelle_System.init()
-        Isabelle_System.install_fonts()
+        Isabelle_System_UI.install_fonts()
         ToolTipManager.sharedInstance.setDismissDelay(1000*60*60)
 
         args.toList match {
@@ -37,7 +37,7 @@ object Graphview extends SwingApplication
       catch { case exn: Throwable => println(Exn.message(exn)); sys.exit(1) }
 
     val top = new MainFrame {
-      iconImage = Isabelle_System.get_icon().getImage
+      iconImage = toolkit.getImage(Isabelle_System.get_icon())
 
       title = "Graphview"
       minimumSize = new Dimension(640, 480)

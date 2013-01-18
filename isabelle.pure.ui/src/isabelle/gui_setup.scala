@@ -17,13 +17,13 @@ object GUI_Setup extends SwingApplication
 {
   def startup(args: Array[String]) =
   {
-    Platform.init_laf()
+    Platform_UI.init_laf()
     top.pack()
     top.visible = true
   }
 
   def top = new MainFrame {
-    iconImage = Isabelle_System.get_icon().getImage
+    iconImage = toolkit.getImage(Isabelle_System.get_icon())
 
     title = "Isabelle setup"
 

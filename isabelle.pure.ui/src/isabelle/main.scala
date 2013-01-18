@@ -15,15 +15,15 @@ object Main
   {
     val (out, rc) =
       try {
-        Platform.init_laf()
+        Platform_UI.init_laf()
         Isabelle_System.init()
         Isabelle_System.isabelle_tool("jedit", ("-s" :: args.toList): _*)
       }
       catch { case exn: Throwable => (Exn.message(exn), 2) }
 
     if (rc != 0)
-      Library.dialog(null, "Isabelle", "Isabelle output",
-        Library.scrollable_text(out + "\nReturn code: " + rc))
+      Library_UI.dialog(null, "Isabelle", "Isabelle output",
+        Library_UI.scrollable_text(out + "\nReturn code: " + rc))
 
     sys.exit(rc)
   }

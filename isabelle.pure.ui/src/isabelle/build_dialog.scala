@@ -18,7 +18,7 @@ object Build_Dialog
 {
   def main(args: Array[String]) =
   {
-    Platform.init_laf()
+    Platform_UI.init_laf()
     try {
       args.toList match {
         case
@@ -51,8 +51,8 @@ object Build_Dialog
     }
     catch {
       case exn: Throwable =>
-        Library.error_dialog(null, "Isabelle build failure",
-          Library.scrollable_text(Exn.message(exn)))
+        Library_UI.error_dialog(null, "Isabelle build failure",
+          Library_UI.scrollable_text(Exn.message(exn)))
         sys.exit(2)
     }
   }
@@ -64,7 +64,7 @@ object Build_Dialog
     more_dirs: List[(Boolean, Path)],
     session: String): MainFrame = new MainFrame
   {
-    iconImage = Isabelle_System.get_icon().getImage
+    iconImage = toolkit.getImage(Isabelle_System.get_icon())
 
 
     /* GUI state */
@@ -78,7 +78,7 @@ object Build_Dialog
     /* text */
 
     val text = new TextArea {
-      font = new Font("SansSerif", Font.PLAIN, Library.resolution_scale(10) max 14)
+      font = new Font("SansSerif", Font.PLAIN, Library_UI.resolution_scale(10) max 14)
       editable = false
       columns = 50
       rows = 20

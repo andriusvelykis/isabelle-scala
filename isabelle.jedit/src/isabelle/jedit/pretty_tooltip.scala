@@ -100,11 +100,11 @@ class Pretty_Tooltip(
     val fm = pretty_text_area.getPainter.getFontMetrics
     val margin = rendering.tooltip_margin
     val lines =
-      XML.traverse_text(Pretty.formatted(body, margin, Pretty.font_metric(fm)))(0)(
+      XML.traverse_text(Pretty.formatted(body, margin, Pretty_UI.font_metric(fm)))(0)(
         (n: Int, s: String) => n + s.iterator.filter(_ == '\n').length)
 
     val bounds = rendering.tooltip_bounds
-    val w = (Pretty.char_width_int(fm) * (margin + 2)) min (screen_bounds.width * bounds).toInt
+    val w = (Pretty_UI.char_width_int(fm) * (margin + 2)) min (screen_bounds.width * bounds).toInt
     val h = (fm.getHeight * (lines + 2)) min (screen_bounds.height * bounds).toInt
     pretty_text_area.setPreferredSize(new Dimension(w, h))
     window.pack

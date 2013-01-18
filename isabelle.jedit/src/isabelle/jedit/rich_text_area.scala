@@ -493,7 +493,7 @@ class Rich_Text_Area(
             val offset = caret - text_area.getLineStartOffset(physical_line)
             val x = text_area.offsetToXY(physical_line, offset).x
             gfx.setColor(painter.getCaretColor)
-            gfx.drawRect(x, y, Pretty.char_width_int(fm) - 1, fm.getHeight - 1)
+            gfx.drawRect(x, y, Pretty_UI.char_width_int(fm) - 1, fm.getHeight - 1)
           }
         }
       }
