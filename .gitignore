@@ -1,4 +1,5 @@
 isabelle.jedit/bin
 isabelle.pide/bin
 isabelle.pure/bin
+isabelle.graphview/bin
 .cache
