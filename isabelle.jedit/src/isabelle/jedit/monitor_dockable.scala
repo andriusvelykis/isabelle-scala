@@ -22,14 +22,14 @@ class Monitor_Dockable(view: View, position: String) extends Dockable(view, posi
 {
   /* chart data -- owned by Swing thread */
 
-  private val chart = ML_Statistics.empty.chart(null, Nil)
+  private val chart = ML_Statistics_UI.chart(ML_Statistics.empty.content, null, Nil)
   private val data = chart.getXYPlot.getDataset.asInstanceOf[XYSeriesCollection]
   private var rev_stats: List[Properties.T] = Nil
 
   private val delay_update =
     Swing_Thread.delay_first(PIDE.options.seconds("editor_chart_delay")) {
-      ML_Statistics(rev_stats.reverse)
-        .update_data(data, ML_Statistics.workers_fields._2) // FIXME selectable fields
+      ML_Statistics_UI.update_data(ML_Statistics(rev_stats.reverse).content,
+        data, ML_Statistics.workers_fields._2) // FIXME selectable fields
     }
 
   set_content(new ChartPanel(chart))

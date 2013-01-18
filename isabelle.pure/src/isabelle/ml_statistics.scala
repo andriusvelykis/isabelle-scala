@@ -8,11 +8,6 @@ package isabelle
 
 
 import scala.collection.immutable.{SortedSet, SortedMap}
-import scala.swing.{Frame, Component}
-
-import org.jfree.data.xy.{XYSeries, XYSeriesCollection}
-import org.jfree.chart.{JFreeChart, ChartPanel, ChartFactory}
-import org.jfree.chart.plot.PlotOrientation
 
 
 object ML_Statistics
@@ -79,41 +74,5 @@ final class ML_Statistics private(val stats: List[Properties.T])
       ML_Statistics.Entry(time, data)
     })
 
-
-  /* charts */
-
-  def update_data(data: XYSeriesCollection, selected_fields: Iterable[String])
-  {
-    data.removeAllSeries
-    for {
-      field <- selected_fields.iterator
-      series = new XYSeries(field)
-    } {
-      content.foreach(entry => series.add(entry.time, entry.data(field)))
-      data.addSeries(series)
-    }
-  }
-
-  def chart(title: String, selected_fields: Iterable[String]): JFreeChart =
-  {
-    val data = new XYSeriesCollection
-    update_data(data, selected_fields)
-
-    ChartFactory.createXYLineChart(title, "time", "value", data,
-      PlotOrientation.VERTICAL, true, true, true)
-  }
-
-  def chart(arg: (String, Iterable[String])): JFreeChart = chart(arg._1, arg._2)
-
-  def standard_frames: Unit =
-    ML_Statistics.standard_fields.map(chart(_)).foreach(c =>
-      Swing_Thread.later {
-        new Frame {
-          iconImage = Isabelle_System.get_icon().getImage
-          title = "ML statistics"
-          contents = Component.wrap(new ChartPanel(c))
-          visible = true
-        }
-      })
 }
 
