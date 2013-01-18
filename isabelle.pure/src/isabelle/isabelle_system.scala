@@ -10,7 +10,7 @@ package isabelle
 import java.lang.System
 import java.util.regex.Pattern
 import java.io.{InputStream, OutputStream, File => JFile, BufferedReader, InputStreamReader,
-  BufferedWriter, OutputStreamWriter, IOException, FileInputStream, BufferedInputStream}
+  BufferedWriter, OutputStreamWriter, IOException}
 import java.awt.{GraphicsEnvironment, Font}
 import java.awt.font.TextAttribute
 import javax.swing.ImageIcon
@@ -433,15 +433,6 @@ object Isabelle_System
     val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
     for (font <- Path.split(getenv_strict("ISABELLE_FONTS")))
       ge.registerFont(Font.createFont(Font.TRUETYPE_FONT, font.file))
-  }
-
-  def install_fonts_jfx()
-  {
-    for (font <- Path.split(getenv_strict("ISABELLE_FONTS"))) {
-      val stream = new BufferedInputStream(new FileInputStream(font.file))
-      try { javafx.scene.text.Font.loadFont(stream, 1.0) }
-      finally { stream.close }
-    }
   }
 
 
