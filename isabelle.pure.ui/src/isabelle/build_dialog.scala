@@ -18,7 +18,7 @@ object Build_Dialog
 {
   def main(args: Array[String]) =
   {
-    Platform.init_laf()
+    Platform_UI.init_laf()
     try {
       args.toList match {
         case

@@ -15,7 +15,7 @@ object Main
   {
     val (out, rc) =
       try {
-        Platform.init_laf()
+        Platform_UI.init_laf()
         Isabelle_System.init()
         Isabelle_System.isabelle_tool("jedit", ("-s" :: args.toList): _*)
       }
