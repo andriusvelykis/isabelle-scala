@@ -275,7 +275,7 @@ class Plugin extends EBPlugin
 
       PIDE.plugin = this
       Isabelle_System.init()
-      Isabelle_System.install_fonts()
+      Isabelle_System_UI.install_fonts()
 
       val init_options = Options.init()
       Swing_Thread.now { PIDE.options.update(init_options)  }

@@ -24,7 +24,7 @@ object Graphview extends SwingApplication
       try {
         Platform_UI.init_laf()
         Isabelle_System.init()
-        Isabelle_System.install_fonts()
+        Isabelle_System_UI.install_fonts()
         ToolTipManager.sharedInstance.setDismissDelay(1000*60*60)
 
         args.toList match {

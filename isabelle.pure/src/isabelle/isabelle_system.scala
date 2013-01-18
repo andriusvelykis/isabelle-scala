@@ -11,8 +11,6 @@ import java.lang.System
 import java.util.regex.Pattern
 import java.io.{InputStream, OutputStream, File => JFile, BufferedReader, InputStreamReader,
   BufferedWriter, OutputStreamWriter, IOException}
-import java.awt.{GraphicsEnvironment, Font}
-import java.awt.font.TextAttribute
 
 import scala.io.Source
 import scala.util.matching.Regex
@@ -419,19 +417,6 @@ object Isabelle_System
       case Some(logic) => logic
       case None => Isabelle_System.getenv_strict("ISABELLE_LOGIC")
     }
-  }
-
-
-  /* fonts */
-
-  def get_font(family: String = "IsabelleText", size: Int = 1, bold: Boolean = false): Font =
-    new Font(family, if (bold) Font.BOLD else Font.PLAIN, size)
-
-  def install_fonts()
-  {
-    val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
-    for (font <- Path.split(getenv_strict("ISABELLE_FONTS")))
-      ge.registerFont(Font.createFont(Font.TRUETYPE_FONT, font.file))
   }
 
 
