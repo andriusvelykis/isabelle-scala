@@ -32,7 +32,7 @@ AUTHOR_KRAUSS_NAME="Alexander Krauss"
 AUTHOR_KRAUSS_EMAIL_REV="ed.mut.ni@ssuark"
 
 
-FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|mk-jars\|build-jars'
+FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|mk-jars\|build-jars\|Graphview'
 
 # ensure the repo is updated to the master
 git checkout master
