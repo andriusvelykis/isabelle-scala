@@ -47,12 +47,12 @@ object ML_Statistics_UI
 
   def chart(arg: (String, Iterable[String])): JFreeChart = chart(arg._1, arg._2)
 
-  def standard_frames: Unit =
+  def standard_frames(stats: ML_Statistics): Unit =
     ML_Statistics.standard_fields.map(chart(_)).foreach(c =>
       Swing_Thread.later {
         new Frame {
           iconImage = toolkit.getImage(Isabelle_System.get_icon())
-          title = name
+          title = stats.name
           contents = Component.wrap(new ChartPanel(c))
           visible = true
         }
