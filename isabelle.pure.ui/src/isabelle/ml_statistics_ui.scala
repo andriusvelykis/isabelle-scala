@@ -52,7 +52,7 @@ object ML_Statistics_UI
       Swing_Thread.later {
         new Frame {
           iconImage = toolkit.getImage(Isabelle_System.get_icon())
-          title = "ML statistics"
+          title = name
           contents = Component.wrap(new ChartPanel(c))
           visible = true
         }
