@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>isabelle.scala</groupId>
   <artifactId>isabelle.scala-parent</artifactId>
-  <version>2012.0.0-SNAPSHOT</version>
+  <version>2013.0.1-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Isabelle/Scala Parent</name>
@@ -15,8 +15,9 @@
   </modules>
 
   <properties>
-    <tycho.version>0.15.0</tycho.version>
-    <scala.version>2.9.2</scala.version>
+    <tycho.version>0.16.0</tycho.version>
+    <scala.version>2.10.0</scala.version>
+    <java.version>1.7</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
   </properties>
@@ -31,15 +32,9 @@
   
   <repositories>
     <repository>
-       <id>eclipse-indigo</id>
-       <layout>p2</layout>
-       <url>http://download.eclipse.org/releases/indigo</url>
-    </repository>
-
-    <repository>
        <id>scala-eclipse-toolchain-osgi</id>
        <layout>p2</layout>
-       <url>http://download.scala-ide.org/scala-eclipse-toolchain-osgi-${scala.version}-SNAPSHOT/</url>
+       <url>http://download.scala-ide.org/scala-eclipse-toolchain-osgi-210x/</url>
     </repository>
   </repositories>
 
@@ -103,7 +98,68 @@
           </execution>
         </executions>
       </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.0</version>
+        <configuration>
+          <source>${java.version}</source>
+          <target>${java.version}</target>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>1.2</version>
+        <executions>
+          <execution>
+            <id>enforce-java</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>${java.version}</version>
+                </requireJavaVersion>
+              </rules>    
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
+
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <!-- Ignore "enforce" warnings by m2e (does not affect Maven build at all) -->
+          <groupId>org.eclipse.m2e</groupId>
+          <artifactId>lifecycle-mapping</artifactId>
+          <version>1.0.0</version>
+          <configuration>
+            <lifecycleMappingMetadata>
+              <pluginExecutions>
+                <pluginExecution>
+                  <pluginExecutionFilter>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <versionRange>[1.0,)</versionRange>
+                    <goals>
+                      <goal>enforce</goal>
+                    </goals>
+                  </pluginExecutionFilter>
+                  <action>
+                    <ignore></ignore>
+                  </action>
+                </pluginExecution>
+              </pluginExecutions>
+            </lifecycleMappingMetadata>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
   </build>
 
 </project>

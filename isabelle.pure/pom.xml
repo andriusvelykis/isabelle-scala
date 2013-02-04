@@ -5,7 +5,7 @@
   <parent>
     <groupId>isabelle.scala</groupId>
     <artifactId>isabelle.scala-parent</artifactId>
-    <version>2012.0.0-SNAPSHOT</version>
+    <version>2013.0.1-SNAPSHOT</version>
   </parent>
   <artifactId>isabelle.pure</artifactId>
   <packaging>eclipse-plugin</packaging>
