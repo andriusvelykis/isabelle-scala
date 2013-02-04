@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>isabelle.scala</groupId>
   <artifactId>isabelle.scala-parent</artifactId>
-  <version>2012.0.0-SNAPSHOT</version>
+  <version>2013.0.1-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Isabelle/Scala Parent</name>
