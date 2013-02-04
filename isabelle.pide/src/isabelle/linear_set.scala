@@ -37,16 +37,18 @@ final class Linear_Set[A] private(
 
   /* relative addressing */
 
-  // FIXME check definedness??
-  def next(elem: A): Option[A] = nexts.get(elem)
-  def prev(elem: A): Option[A] = prevs.get(elem)
+  def next(elem: A): Option[A] =
+    if (contains(elem)) nexts.get(elem)
+    else throw new Linear_Set.Undefined(elem)
+
+  def prev(elem: A): Option[A] =
+    if (contains(elem)) prevs.get(elem)
+    else throw new Linear_Set.Undefined(elem)
 
   def get_after(hook: Option[A]): Option[A] =
     hook match {
       case None => start
-      case Some(elem) =>
-        if (!contains(elem)) throw new Linear_Set.Undefined(elem)
-        next(elem)
+      case Some(elem) => next(elem)
     }
 
   def insert_after(hook: Option[A], elem: A): Linear_Set[A] =
@@ -73,6 +75,11 @@ final class Linear_Set[A] private(
                   prevs + (elem2 -> elem) + (elem -> elem1))
             }
       }
+
+  def append_after(hook: Option[A], elems: Seq[A]): Linear_Set[A] =  // FIXME reverse fold
+    ((hook, this) /: elems) {
+      case ((last, set), elem) => (Some(elem), set.insert_after(last, elem))
+    }._2
 
   def delete_after(hook: Option[A]): Linear_Set[A] =
     hook match {
@@ -103,24 +110,6 @@ final class Linear_Set[A] private(
           }
     }
 
-  def append_after(hook: Option[A], elems: Seq[A]): Linear_Set[A] =
-    ((hook, this) /: elems) {
-      case ((last_elem, set), elem) => (Some(elem), set.insert_after(last_elem, elem))
-    }._2
-
-  def delete_between(from: Option[A], to: Option[A]): Linear_Set[A] =
-  {
-    if (isEmpty) this
-    else {
-      val next =
-        if (from == end) None
-        else if (from == None) start
-        else from.map(nexts(_))
-      if (next == to) this
-      else delete_after(from).delete_between(from, to)
-    }
-  }
-
 
   /* Set methods */
 
@@ -132,31 +121,37 @@ final class Linear_Set[A] private(
   def contains(elem: A): Boolean =
     !isEmpty && (end.get == elem || nexts.isDefinedAt(elem))
 
-  private def make_iterator(from: Option[A], which: Map[A, A]): Iterator[A] = new Iterator[A] {
+  private def make_iterator(from: Option[A]): Iterator[A] = new Iterator[A] {
     private var next_elem = from
     def hasNext(): Boolean = next_elem.isDefined
     def next(): A =
       next_elem match {
         case Some(elem) =>
-          next_elem = which.get(elem)
+          next_elem = nexts.get(elem)
           elem
         case None => Iterator.empty.next()
       }
   }
 
-  override def iterator: Iterator[A] = make_iterator(start, nexts)
+  override def iterator: Iterator[A] = make_iterator(start)
 
   def iterator(elem: A): Iterator[A] =
-    if (contains(elem)) make_iterator(Some(elem), nexts)
+    if (contains(elem)) make_iterator(Some(elem))
     else throw new Linear_Set.Undefined(elem)
 
-  def reverse_iterator(elem: A): Iterator[A] =
-    if (contains(elem)) make_iterator(Some(elem), prevs)
-    else throw new Linear_Set.Undefined(elem)
+  def iterator(from: A, to: A): Iterator[A] =
+    if (contains(to))
+      nexts.get(to) match {
+        case None => iterator(from)
+        case Some(stop) => iterator(from).takeWhile(_ != stop)
+      }
+    else throw new Linear_Set.Undefined(to)
+
+  def reverse: Linear_Set[A] = new Linear_Set(end, start, prevs, nexts)
+
+  override def last: A = reverse.head
 
   def + (elem: A): Linear_Set[A] = insert_after(end, elem)
 
-  def - (elem: A): Linear_Set[A] =
-    if (!contains(elem)) throw new Linear_Set.Undefined(elem)
-    else delete_after(prev(elem))
+  def - (elem: A): Linear_Set[A] = delete_after(prev(elem))
 }

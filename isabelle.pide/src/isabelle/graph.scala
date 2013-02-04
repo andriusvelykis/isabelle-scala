@@ -14,16 +14,42 @@ import scala.annotation.tailrec
 
 object Graph
 {
-  class Duplicate[Key](x: Key) extends Exception
-  class Undefined[Key](x: Key) extends Exception
-  class Cycles[Key](cycles: List[List[Key]]) extends Exception
+  class Duplicate[Key](val key: Key) extends Exception
+  class Undefined[Key](val key: Key) extends Exception
+  class Cycles[Key](val cycles: List[List[Key]]) extends Exception
 
   def empty[Key, A](implicit ord: Ordering[Key]): Graph[Key, A] =
     new Graph[Key, A](SortedMap.empty(ord))
 
+  def make[Key, A](entries: List[((Key, A), List[Key])])(implicit ord: Ordering[Key])
+    : Graph[Key, A] =
+  {
+    val graph1 =
+      (empty[Key, A](ord) /: entries) { case (graph, ((x, info), _)) => graph.new_node(x, info) }
+    val graph2 =
+      (graph1 /: entries) { case (graph, ((x, _), ys)) => (graph /: ys)(_.add_edge(x, _)) }
+    graph2
+  }
+
   def string[A]: Graph[String, A] = empty(Ordering.String)
   def int[A]: Graph[Int, A] = empty(Ordering.Int)
   def long[A]: Graph[Long, A] = empty(Ordering.Long)
+
+
+  /* XML data representation */
+
+  def encode[Key, A](key: XML.Encode.T[Key], info: XML.Encode.T[A]): XML.Encode.T[Graph[Key, A]] =
+    ((graph: Graph[Key, A]) => {
+      import XML.Encode._
+      list(pair(pair(key, info), list(key)))(graph.dest)
+    })
+
+  def decode[Key, A](key: XML.Decode.T[Key], info: XML.Decode.T[A])(implicit ord: Ordering[Key])
+      : XML.Decode.T[Graph[Key, A]] =
+    ((body: XML.Body) => {
+      import XML.Decode._
+      make(list(pair(pair(key, info), list(key)))(body))(ord)
+    })
 }
 
 
@@ -39,15 +65,17 @@ final class Graph[Key, A] private(rep: SortedMap[Key, (A, (SortedSet[Key], Sorte
   /* graphs */
 
   def is_empty: Boolean = rep.isEmpty
+  def defined(x: Key): Boolean = rep.isDefinedAt(x)
 
   def entries: Iterator[(Key, Entry)] = rep.iterator
   def keys: Iterator[Key] = entries.map(_._1)
 
-  def dest: List[(Key, List[Key])] =
-    (for ((x, (_, (_, succs))) <- entries) yield (x, succs.toList)).toList
+  def dest: List[((Key, A), List[Key])] =
+    (for ((x, (i, (_, succs))) <- entries) yield ((x, i), succs.toList)).toList
 
   override def toString: String =
-    dest.map(p => p._1.toString + " -> " + p._2.map(_.toString).mkString("{", ", ", "}"))
+    dest.map({ case ((x, _), ys) =>
+        x.toString + " -> " + ys.iterator.map(_.toString).mkString("{", ", ", "}") })
       .mkString("Graph(", ", ", ")")
 
   private def get_entry(x: Key): Entry =
@@ -73,19 +101,19 @@ final class Graph[Key, A] private(rep: SortedMap[Key, (A, (SortedSet[Key], Sorte
   /*nodes reachable from xs -- topologically sorted for acyclic graphs*/
   def reachable(next: Key => Keys, xs: List[Key]): (List[List[Key]], Keys) =
   {
-    def reach(reached: (List[Key], Keys), x: Key): (List[Key], Keys) =
+    def reach(x: Key, reached: (List[Key], Keys)): (List[Key], Keys) =
     {
       val (rs, r_set) = reached
       if (r_set(x)) reached
       else {
-        val (rs1, r_set1) = ((rs, r_set + x) /: next(x))(reach)
+        val (rs1, r_set1) = (next(x) :\ (rs, r_set + x))(reach)
         (x :: rs1, r_set1)
       }
     }
     def reachs(reached: (List[List[Key]], Keys), x: Key): (List[List[Key]], Keys) =
     {
       val (rss, r_set) = reached
-      val (rs, r_set1) = reach((Nil, r_set), x)
+      val (rs, r_set1) = reach(x, (Nil, r_set))
       (rs :: rss, r_set1)
     }
     ((List.empty[List[Key]], empty_keys) /: xs)(reachs)
@@ -123,15 +151,12 @@ final class Graph[Key, A] private(rep: SortedMap[Key, (A, (SortedSet[Key], Sorte
 
   def new_node(x: Key, info: A): Graph[Key, A] =
   {
-    if (rep.isDefinedAt(x)) throw new Graph.Duplicate(x)
+    if (defined(x)) throw new Graph.Duplicate(x)
     else new Graph[Key, A](rep + (x -> (info, (empty_keys, empty_keys))))
   }
 
   def default_node(x: Key, info: A): Graph[Key, A] =
-  {
-    if (rep.isDefinedAt(x)) this
-    else new_node(x, info)
-  }
+    if (defined(x)) this else new_node(x, info)
 
   private def del_adjacent(fst: Boolean, x: Key)(map: SortedMap[Key, Entry], y: Key)
       : SortedMap[Key, Entry] =
@@ -155,8 +180,7 @@ final class Graph[Key, A] private(rep: SortedMap[Key, (A, (SortedSet[Key], Sorte
   /* edge operations */
 
   def is_edge(x: Key, y: Key): Boolean =
-    try { imm_succs(x)(y) }
-    catch { case _: Graph.Undefined[_] => false }
+    defined(x) && defined(y) && imm_succs(x)(y)
 
   def add_edge(x: Key, y: Key): Graph[Key, A] =
     if (is_edge(x, y)) this
@@ -198,6 +222,34 @@ final class Graph[Key, A] private(rep: SortedMap[Key, (A, (SortedSet[Key], Sorte
   }
 
 
+  /* transitive closure and reduction */
+
+  private def transitive_step(z: Key): Graph[Key, A] =
+  {
+    val (preds, succs) = get_entry(z)._2
+    var graph = this
+    for (x <- preds; y <- succs) graph = graph.add_edge(x, y)
+    graph
+  }
+
+  def transitive_closure: Graph[Key, A] = (this /: keys)(_.transitive_step(_))
+
+  def transitive_reduction_acyclic: Graph[Key, A] =
+  {
+    val trans = this.transitive_closure
+    if (trans.entries.exists({ case (x, (_, (_, succs))) => succs.contains(x) }))
+      error("Cyclic graph")
+
+    var graph = this
+    for {
+      (x, (_, (_, succs))) <- this.entries
+      y <- succs
+      if trans.imm_preds(y).exists(z => trans.is_edge(x, z))
+    } graph = graph.del_edge(x, y)
+    graph
+  }
+
+
   /* maintain acyclic graphs */
 
   def add_edge_acyclic(x: Key, y: Key): Graph[Key, A] =
@@ -209,7 +261,7 @@ final class Graph[Key, A] private(rep: SortedMap[Key, (A, (SortedSet[Key], Sorte
       }
     }
 
-  def add_deps_cyclic(y: Key, xs: List[Key]): Graph[Key, A] =
+  def add_deps_acyclic(y: Key, xs: List[Key]): Graph[Key, A] =
     (this /: xs)(_.add_edge_acyclic(_, y))
 
   def topological_order: List[Key] = all_succs(minimals)

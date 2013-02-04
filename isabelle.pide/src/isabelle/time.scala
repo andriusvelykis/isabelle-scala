@@ -8,9 +8,12 @@ Time based on milliseconds.
 package isabelle
 
 
+import java.util.Locale
+
+
 object Time
 {
-  def seconds(s: Double): Time = new Time((s * 1000.0) round)
+  def seconds(s: Double): Time = new Time((s * 1000.0).round)
   def ms(m: Long): Time = new Time(m)
 }
 
@@ -24,7 +27,7 @@ final class Time private(val ms: Long)
   def is_relevant: Boolean = ms >= 1
 
   override def toString =
-    String.format(java.util.Locale.ROOT, "%.3f", seconds.asInstanceOf[AnyRef])
+    String.format(Locale.ROOT, "%.3f", seconds.asInstanceOf[AnyRef])
 
   def message: String = toString + "s"
 }

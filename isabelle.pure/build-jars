@@ -14,6 +14,7 @@ declare -a SOURCES=(
   Concurrent/simple_thread.scala
   Concurrent/volatile.scala
   General/exn.scala
+  General/file.scala
   General/graph.scala
   General/linear_set.scala
   General/path.scala
@@ -29,37 +30,42 @@ declare -a SOURCES=(
   Isar/outer_syntax.scala
   Isar/parse.scala
   Isar/token.scala
-  PIDE/blob.scala
   PIDE/command.scala
   PIDE/document.scala
-  PIDE/isabelle_markup.scala
   PIDE/markup.scala
   PIDE/markup_tree.scala
   PIDE/protocol.scala
   PIDE/text.scala
   PIDE/xml.scala
   PIDE/yxml.scala
-  System/cygwin.scala
-  System/download.scala
+  System/color_value.scala
+  System/command_line.scala
   System/event_bus.scala
   System/gui_setup.scala
+  System/html5_panel.scala
   System/invoke_scala.scala
   System/isabelle_charset.scala
   System/isabelle_process.scala
   System/isabelle_system.scala
-  System/main.scala
+  System/jfx_thread.scala
+  System/options.scala
   System/platform.scala
   System/session.scala
-  System/session_manager.scala
-  System/standard_system.scala
   System/swing_thread.scala
   System/system_channel.scala
+  System/utf8.scala
   Thy/completion.scala
   Thy/html.scala
+  Thy/present.scala
   Thy/thy_header.scala
   Thy/thy_info.scala
   Thy/thy_load.scala
   Thy/thy_syntax.scala
+  Tools/build.scala
+  Tools/build_dialog.scala
+  Tools/main.scala
+  Tools/ml_statistics.scala
+  Tools/task_statistics.scala
   library.scala
   package.scala
   term.scala
@@ -122,8 +128,16 @@ shift $(($OPTIND - 1))
 [ "$#" -ne 0 ] && usage
 
 
+## dependencies
 
-# build
+declare -a JFREECHART_JARS=()
+for NAME in $JFREECHART_JAR_NAMES
+do
+  JFREECHART_JARS["${#JFREECHART_JARS[@]}"]="$JFREECHART_HOME/lib/$NAME"
+done
+
+
+## build
 
 TARGET_DIR="$ISABELLE_HOME/lib/classes"
 TARGET="$TARGET_DIR/ext/Pure.jar"
@@ -163,7 +177,7 @@ fi
 
 if [ "$OUTDATED" = true ]
 then
-  echo "### Building Isabelle/Scala layer ..."
+  echo "### Building Isabelle/Scala ..."
 
   [ "${#UPDATED[@]}" -gt 0 ] && {
     echo "Changed files:"
@@ -177,16 +191,25 @@ then
 
   SCALAC_OPTIONS="$ISABELLE_SCALA_BUILD_OPTIONS -d classes"
 
-  if [ "$TEST_PIDE" = true ]; then
-    isabelle_scala scalac $SCALAC_OPTIONS "${PIDE_SOURCES[@]}" || \
-      fail "Failed to compile PIDE sources"
-    isabelle_scala scalac $SCALAC_OPTIONS -classpath classes "${PURE_SOURCES[@]}" || \
-      fail "Failed to compile Pure sources"
-  else
-    isabelle_scala scalac $SCALAC_OPTIONS -classpath classes \
-      "${PIDE_SOURCES[@]}" "${PURE_SOURCES[@]}" || \
-      fail "Failed to compile sources"
-  fi
+  JFXRT="$ISABELLE_JDK_HOME/jre/lib/jfxrt.jar"
+
+  (
+    for X in "$JFXRT" "${JFREECHART_JARS[@]}" classes
+    do
+      CLASSPATH="$CLASSPATH:$X"
+    done
+    CLASSPATH="$(jvmpath "$CLASSPATH")"
+
+    if [ "$TEST_PIDE" = true ]; then
+      isabelle_scala scalac $SCALAC_OPTIONS "${PIDE_SOURCES[@]}" || \
+        fail "Failed to compile PIDE sources"
+      isabelle_scala scalac $SCALAC_OPTIONS "${PURE_SOURCES[@]}" || \
+        fail "Failed to compile Pure sources"
+    else
+      isabelle_scala scalac $SCALAC_OPTIONS "${PIDE_SOURCES[@]}" "${PURE_SOURCES[@]}" || \
+        fail "Failed to compile sources"
+    fi
+  )
 
   mkdir -p "$TARGET_DIR/ext" || fail "Failed to create directory $TARGET_DIR/ext"
 
@@ -199,9 +222,15 @@ then
   isabelle_jdk jar cfe "$(jvmpath "$TARGET")" isabelle.GUI_Setup META-INF isabelle || \
     fail "Failed to produce $TARGET"
 
-  cp "$SCALA_HOME/lib/scala-swing.jar" "$SCALA_HOME/lib/scala-library.jar" "$TARGET_DIR/ext"
+  cp "$SCALA_HOME/lib/scala-compiler.jar" \
+    "$SCALA_HOME/lib/scala-library.jar" \
+    "$SCALA_HOME/lib/scala-swing.jar" "$TARGET_DIR/ext"
+
   [ -e "$SCALA_HOME/lib/scala-actors.jar" ] && \
     cp "$SCALA_HOME/lib/scala-actors.jar" "$TARGET_DIR/ext"
+
+  [ -e "$SCALA_HOME/lib/scala-reflect.jar" ] && \
+    cp "$SCALA_HOME/lib/scala-reflect.jar" "$TARGET_DIR/ext"
 
   popd >/dev/null
 

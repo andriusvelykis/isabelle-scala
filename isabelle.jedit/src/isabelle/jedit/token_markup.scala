@@ -17,6 +17,7 @@ import org.gjt.sp.util.SyntaxUtilities
 import org.gjt.sp.jedit.{jEdit, Mode}
 import org.gjt.sp.jedit.syntax.{Token => JEditToken, TokenMarker, TokenHandler,
   ParserRuleSet, ModeProvider, XModeHandler, SyntaxStyle}
+import org.gjt.sp.jedit.textarea.{TextArea, Selection}
 import org.gjt.sp.jedit.buffer.JEditBuffer
 
 import javax.swing.text.Segment
@@ -24,6 +25,50 @@ import javax.swing.text.Segment
 
 object Token_Markup
 {
+  /* editing support for control symbols */
+
+  val is_control_style =
+    Set(Symbol.sub_decoded, Symbol.sup_decoded,
+      Symbol.isub_decoded, Symbol.isup_decoded, Symbol.bold_decoded)
+
+  def update_control_style(control: String, text: String): String =
+  {
+    val result = new StringBuilder
+    for (sym <- Symbol.iterator(text) if !is_control_style(sym)) {
+      if (Symbol.is_controllable(sym)) result ++= control
+      result ++= sym
+    }
+    result.toString
+  }
+
+  def edit_control_style(text_area: TextArea, control: String)
+  {
+    Swing_Thread.assert()
+
+    val buffer = text_area.getBuffer
+
+    text_area.getSelection.foreach(sel => {
+      val before = JEdit_Lib.point_range(buffer, sel.getStart - 1)
+      JEdit_Lib.try_get_text(buffer, before) match {
+        case Some(s) if is_control_style(s) =>
+          text_area.extendSelection(before.start, before.stop)
+        case _ =>
+      }
+    })
+
+    text_area.getSelection.toList match {
+      case Nil =>
+        text_area.setSelectedText(control)
+      case sels =>
+        JEdit_Lib.buffer_edit(buffer) {
+          sels.foreach(sel =>
+            text_area.setSelectedText(sel,
+              update_control_style(control, text_area.getSelectedText(sel))))
+        }
+    }
+  }
+
+
   /* font operations */
 
   private def font_metrics(font: Font): LineMetrics =
@@ -80,7 +125,7 @@ object Token_Markup
   private def bold_style(style: SyntaxStyle): SyntaxStyle =
     font_style(style, _.deriveFont(Font.BOLD))
 
-  private def hidden_color: Color = new Color(255, 255, 255, 0)
+  val hidden_color: Color = new Color(255, 255, 255, 0)
 
   class Style_Extender extends SyntaxUtilities.StyleExtender
   {
@@ -115,7 +160,7 @@ object Token_Markup
   def extended_styles(text: CharSequence): Map[Text.Offset, Byte => Byte] =
   {
     // FIXME Symbol.bsub_decoded etc.
-    def ctrl_style(sym: String): Option[Byte => Byte] =
+    def control_style(sym: String): Option[Byte => Byte] =
       if (sym == Symbol.sub_decoded || sym == Symbol.isub_decoded) Some(subscript(_))
       else if (sym == Symbol.sup_decoded || sym == Symbol.isup_decoded) Some(superscript(_))
       else if (sym == Symbol.bold_decoded) Some(bold(_))
@@ -127,15 +172,15 @@ object Token_Markup
       for (i <- start until stop) result += (i -> style)
     }
     var offset = 0
-    var ctrl = ""
+    var control = ""
     for (sym <- Symbol.iterator(text)) {
-      if (ctrl_style(sym).isDefined) ctrl = sym
-      else if (ctrl != "") {
+      if (control_style(sym).isDefined) control = sym
+      else if (control != "") {
         if (Symbol.is_controllable(sym) && sym != "\"" && !Symbol.fonts.isDefinedAt(sym)) {
-          mark(offset - ctrl.length, offset, _ => hidden)
-          mark(offset, offset + sym.length, ctrl_style(ctrl).get)
+          mark(offset - control.length, offset, _ => hidden)
+          mark(offset, offset + sym.length, control_style(control).get)
         }
-        ctrl = ""
+        control = ""
       }
       Symbol.lookup_font(sym) match {
         case Some(idx) => mark(offset, offset + sym.length, user_font(idx, _))
@@ -162,7 +207,7 @@ object Token_Markup
       }
   }
 
-  class Marker extends TokenMarker
+  class Marker(ext_styles: Boolean, get_syntax: => Option[Outer_Syntax]) extends TokenMarker
   {
     override def markTokens(context: TokenMarker.LineContext,
         handler: TokenHandler, raw_line: Segment): TokenMarker.LineContext =
@@ -176,12 +221,11 @@ object Token_Markup
 
       val context1 =
       {
+        val syntax = get_syntax
         val (styled_tokens, context1) =
-          if (line_ctxt.isDefined && Isabelle.session.is_ready) {
-            val syntax = Isabelle.session.recent_syntax()
-            val (tokens, ctxt1) = syntax.scan_context(line, line_ctxt.get)
-            val styled_tokens =
-              tokens.map(tok => (Isabelle_Rendering.token_markup(syntax, tok), tok))
+          if (line_ctxt.isDefined && syntax.isDefined) {
+            val (tokens, ctxt1) = syntax.get.scan_context(line, line_ctxt.get)
+            val styled_tokens = tokens.map(tok => (Rendering.token_markup(syntax.get, tok), tok))
             (styled_tokens, new Line_Context(Some(ctxt1)))
           }
           else {
@@ -189,7 +233,9 @@ object Token_Markup
             (List((JEditToken.NULL, token)), new Line_Context(None))
           }
 
-        val extended = extended_styles(line)
+        val extended =
+          if (ext_styles) extended_styles(line)
+          else Map.empty[Text.Offset, Byte => Byte]
 
         var offset = 0
         for ((style, token) <- styled_tokens) {
@@ -221,7 +267,10 @@ object Token_Markup
 
   /* mode provider */
 
-  private val isabelle_token_marker = new Token_Markup.Marker
+  private val markers = Map(
+    "isabelle" -> new Token_Markup.Marker(true, PIDE.get_recent_syntax()),
+    "isabelle-options" -> new Token_Markup.Marker(false, Some(Options.options_syntax)),
+    "isabelle-root" -> new Token_Markup.Marker(false, Some(Build.root_syntax)))
 
   class Mode_Provider(orig_provider: ModeProvider) extends ModeProvider
   {
@@ -230,15 +279,14 @@ object Token_Markup
     override def loadMode(mode: Mode, xmh: XModeHandler)
     {
       super.loadMode(mode, xmh)
-      if (mode.getName == "isabelle")
-        mode.setTokenMarker(isabelle_token_marker)
+      markers.get(mode.getName).map(mode.setTokenMarker(_))
     }
   }
 
   def refresh_buffer(buffer: JEditBuffer)
   {
     buffer.setTokenMarker(jEdit.getMode("text").getTokenMarker)
-    buffer.setTokenMarker(isabelle_token_marker)
+    markers.get(buffer.getMode.getName).map(buffer.setTokenMarker(_))
   }
 }
 

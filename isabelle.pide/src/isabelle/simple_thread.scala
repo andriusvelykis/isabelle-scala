@@ -15,6 +15,12 @@ import scala.actors.Actor
 
 object Simple_Thread
 {
+  /* prending interrupts */
+
+  def interrupted_exception(): Unit =
+    if (Thread.interrupted()) throw new InterruptedException
+
+
   /* plain thread */
 
   def fork(name: String = "", daemon: Boolean = false)(body: => Unit): Thread =
@@ -30,11 +36,11 @@ object Simple_Thread
 
   /* future result via thread */
 
-  def future[A](name: String = "", daemon: Boolean = false)(body: => A): Future[A] =
+  def future[A](name: String = "", daemon: Boolean = false)(body: => A): (Thread, Future[A]) =
   {
     val result = Future.promise[A]
-    fork(name, daemon) { result.fulfill_result(Exn.capture(body)) }
-    result
+    val thread = fork(name, daemon) { result.fulfill_result(Exn.capture(body)) }
+    (thread, result)
   }
 
 

@@ -20,28 +20,14 @@ object Isabelle_Process
 {
   /* messages */
 
-  object Kind
-  {
-    val message_markup = Map(
-      ('A' : Int) -> Isabelle_Markup.INIT,
-      ('B' : Int) -> Isabelle_Markup.STATUS,
-      ('C' : Int) -> Isabelle_Markup.REPORT,
-      ('D' : Int) -> Isabelle_Markup.WRITELN,
-      ('E' : Int) -> Isabelle_Markup.TRACING,
-      ('F' : Int) -> Isabelle_Markup.WARNING,
-      ('G' : Int) -> Isabelle_Markup.ERROR,
-      ('H' : Int) -> Isabelle_Markup.PROTOCOL)
-  }
-
   sealed abstract class Message
 
   class Input(name: String, args: List[String]) extends Message
   {
     override def toString: String =
-      XML.Elem(Markup(Isabelle_Markup.PROVER_COMMAND, List((Markup.NAME, name))),
+      XML.Elem(Markup(Markup.PROVER_COMMAND, List((Markup.NAME, name))),
         args.map(s =>
-          List(XML.Text("\n"),
-            XML.elem(Isabelle_Markup.PROVER_ARG, YXML.parse_body(s)))).flatten).toString
+          List(XML.Text("\n"), XML.elem(Markup.PROVER_ARG, YXML.parse_body(s)))).flatten).toString
   }
 
   class Output(val message: XML.Elem) extends Message
@@ -50,14 +36,14 @@ object Isabelle_Process
     def properties: Properties.T = message.markup.properties
     def body: XML.Body = message.body
 
-    def is_init = kind == Isabelle_Markup.INIT
-    def is_exit = kind == Isabelle_Markup.EXIT
-    def is_stdout = kind == Isabelle_Markup.STDOUT
-    def is_stderr = kind == Isabelle_Markup.STDERR
-    def is_system = kind == Isabelle_Markup.SYSTEM
-    def is_status = kind == Isabelle_Markup.STATUS
-    def is_report = kind == Isabelle_Markup.REPORT
-    def is_protocol = kind == Isabelle_Markup.PROTOCOL
+    def is_init = kind == Markup.INIT
+    def is_exit = kind == Markup.EXIT
+    def is_stdout = kind == Markup.STDOUT
+    def is_stderr = kind == Markup.STDERR
+    def is_system = kind == Markup.SYSTEM
+    def is_status = kind == Markup.STATUS
+    def is_report = kind == Markup.REPORT
+    def is_protocol = kind == Markup.PROTOCOL
     def is_syslog = is_init || is_exit || is_system || is_stderr
 
     override def toString: String =
@@ -77,36 +63,49 @@ object Isabelle_Process
 
 
 class Isabelle_Process(
-    timeout: Time = Time.seconds(25),
     receiver: Isabelle_Process.Message => Unit = Console.println(_),
     args: List[String] = Nil)
 {
   import Isabelle_Process._
 
 
+  /* text representation */
+
+  def encode(s: String): String = Symbol.encode(s)
+  def decode(s: String): String = Symbol.decode(s)
+
+  object Encode
+  {
+    val string: XML.Encode.T[String] = (s => XML.Encode.string(encode(s)))
+  }
+
+
   /* output */
 
   private def system_output(text: String)
   {
-    receiver(new Output(XML.Elem(Markup(Isabelle_Markup.SYSTEM, Nil), List(XML.Text(text)))))
+    receiver(new Output(XML.Elem(Markup(Markup.SYSTEM, Nil), List(XML.Text(text)))))
   }
 
   private val xml_cache = new XML.Cache()
 
   private def output_message(kind: String, props: Properties.T, body: XML.Body)
   {
-    if (kind == Isabelle_Markup.INIT) system_channel.accepted()
-    if (kind == Isabelle_Markup.PROTOCOL)
+    if (kind == Markup.INIT) system_channel.accepted()
+    if (kind == Markup.PROTOCOL)
       receiver(new Output(XML.Elem(Markup(kind, props), body)))
     else {
-      val msg = XML.Elem(Markup(kind, props), Protocol.clean_message(body))
-      receiver(new Output(xml_cache.cache_tree(msg).asInstanceOf[XML.Elem]))
+      val main = XML.Elem(Markup(kind, props), Protocol.clean_message(body))
+      val reports = Protocol.message_reports(props, body)
+      for (msg <- main :: reports)
+        receiver(new Output(xml_cache.cache_tree(msg).asInstanceOf[XML.Elem]))
     }
   }
 
-  private def output_message(kind: String, text: String)
+  private def exit_message(rc: Int)
   {
-    output_message(kind, Nil, List(XML.Text(Symbol.decode(text))))
+    output_message(Markup.EXIT, Markup.Return_Code(rc),
+      List(XML.Text("Return code: " + rc.toString)))
   }
 
 
@@ -137,11 +136,11 @@ class Isabelle_Process(
       val cmdline =
         Isabelle_System.getenv_strict("ISABELLE_PROCESS") ::
           (system_channel.isabelle_args ::: args)
-      new Isabelle_System.Managed_Process(false, cmdline: _*)
+      new Isabelle_System.Managed_Process(null, null, false, cmdline: _*)
     }
     catch { case e: IOException => system_channel.accepted(); throw(e) }
 
-  val process_result =
+  val (_, process_result) =
     Simple_Thread.future("process_result") { process.join }
 
   private def terminate_process()
@@ -154,25 +153,25 @@ class Isabelle_Process(
   {
     val (startup_failed, startup_errors) =
     {
-      val expired = System.currentTimeMillis() + timeout.ms
-      val result = new StringBuilder(100)
-
       var finished: Option[Boolean] = None
-      while (finished.isEmpty && System.currentTimeMillis() <= expired) {
+      val result = new StringBuilder(100)
+      while (finished.isEmpty && (process.stderr.ready || !process_result.is_finished)) {
         while (finished.isEmpty && process.stderr.ready) {
-          val c = process.stderr.read
-          if (c == 2) finished = Some(true)
-          else result += c.toChar
+          try {
+            val c = process.stderr.read
+            if (c == 2) finished = Some(true)
+            else result += c.toChar
+          }
+          catch { case _: IOException => finished = Some(false) }
         }
-        if (process_result.is_finished) finished = Some(false)
-        else Thread.sleep(10)
+        Thread.sleep(10)
       }
       (finished.isEmpty || !finished.get, result.toString.trim)
     }
     if (startup_errors != "") system_output(startup_errors)
 
     if (startup_failed) {
-      output_message(Isabelle_Markup.EXIT, "Return code: 127")
+      exit_message(127)
       process.stdin.close
       Thread.sleep(300)
       terminate_process()
@@ -189,10 +188,11 @@ class Isabelle_Process(
 
       val rc = process_result.join
       system_output("process terminated")
+      close_input()
       for ((thread, _) <- List(standard_input, stdout, stderr, command_input, message))
         thread.join
       system_output("process_manager terminated")
-      output_message(Isabelle_Markup.EXIT, "Return code: " + rc.toString)
+      exit_message(rc)
     }
     system_channel.accepted()
   }
@@ -204,7 +204,7 @@ class Isabelle_Process(
 
   def terminate()
   {
-    close()
+    close_input()
     system_output("Terminating Isabelle process")
     terminate_process()
   }
@@ -246,8 +246,8 @@ class Isabelle_Process(
   private def physical_output_actor(err: Boolean): (Thread, Actor) =
   {
     val (name, reader, markup) =
-      if (err) ("standard_error", process.stderr, Isabelle_Markup.STDERR)
-      else ("standard_output", process.stdout, Isabelle_Markup.STDOUT)
+      if (err) ("standard_error", process.stderr, Markup.STDERR)
+      else ("standard_output", process.stdout, Markup.STDOUT)
 
     Simple_Thread.actor(name) {
       try {
@@ -263,7 +263,7 @@ class Isabelle_Process(
             else done = true
           }
           if (result.length > 0) {
-            output_message(markup, result.toString)
+            output_message(markup, Nil, List(XML.Text(decode(result.toString))))
             result.length = 0
           }
           else {
@@ -292,9 +292,8 @@ class Isabelle_Process(
           //{{{
           receive {
             case Input_Chunks(chunks) =>
-              stream.write(Standard_System.string_bytes(
-                  chunks.map(_.length).mkString("", ",", "\n")));
-              chunks.foreach(stream.write(_));
+              stream.write(UTF8.string_bytes(chunks.map(_.length).mkString("", ",", "\n")))
+              chunks.foreach(stream.write(_))
               stream.flush
             case Close =>
               stream.close
@@ -322,7 +321,7 @@ class Isabelle_Process(
       val default_buffer = new Array[Byte](65536)
       var c = -1
 
-      def read_chunk(decode: Boolean): XML.Body =
+      def read_chunk(do_decode: Boolean): XML.Body =
       {
         //{{{
         // chunk size
@@ -349,9 +348,9 @@ class Isabelle_Process(
 
         if (i != n) throw new Protocol_Error("bad message chunk content")
 
-        if (decode)
-          YXML.parse_body_failsafe(Standard_System.decode_chars(Symbol.decode, buf, 0, n))
-        else List(XML.Text(Standard_System.decode_chars(s => s, buf, 0, n).toString))
+        if (do_decode)
+          YXML.parse_body_failsafe(UTF8.decode_chars(decode, buf, 0, n))
+        else List(XML.Text(UTF8.decode_chars(s => s, buf, 0, n).toString))
         //}}}
       }
 
@@ -361,10 +360,9 @@ class Isabelle_Process(
             //{{{
             val header = read_chunk(true)
             header match {
-              case List(XML.Elem(Markup(name, props), Nil))
-                  if name.size == 1 && Kind.message_markup.isDefinedAt(name(0)) =>
-                val kind = Kind.message_markup(name(0))
-                val body = read_chunk(kind != Isabelle_Markup.PROTOCOL)
+              case List(XML.Elem(Markup(name, props), Nil)) =>
+                val kind = name.intern
+                val body = read_chunk(kind != Markup.PROTOCOL)
                 output_message(kind, props, body)
               case _ =>
                 read_chunk(false)
@@ -391,13 +389,20 @@ class Isabelle_Process(
   def input_raw(text: String): Unit = standard_input._2 ! Input_Text(text)
 
   def input_bytes(name: String, args: Array[Byte]*): Unit =
-    command_input._2 ! Input_Chunks(Standard_System.string_bytes(name) :: args.toList)
+    command_input._2 ! Input_Chunks(UTF8.string_bytes(name) :: args.toList)
 
-  def input(name: String, args: String*): Unit =
+  def input(name: String, args: String*)
   {
     receiver(new Input(name, args.toList))
-    input_bytes(name, args.map(Standard_System.string_bytes): _*)
+    input_bytes(name, args.map(UTF8.string_bytes): _*)
   }
 
-  def close(): Unit = { close(command_input); close(standard_input) }
+  def options(opts: Options): Unit =
+    input("Isabelle_Process.options", YXML.string_of_body(opts.encode))
+
+  def close_input()
+  {
+    close(command_input)
+    close(standard_input)
+  }
 }

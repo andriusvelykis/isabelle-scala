@@ -22,8 +22,11 @@ object Session
   /* events */
 
   //{{{
-  case object Global_Settings
+  case class Statistics(props: Properties.T)
+  case class Global_Options(options: Options)
   case object Caret_Focus
+  case class Raw_Edits(edits: List[Document.Edit_Text])
+  case class Dialog_Result(id: Document.ID, serial: Long, result: String)
   case class Commands_Changed(
     assignment: Boolean, nodes: Set[Document.Node.Name], commands: Set[Command])
 
@@ -37,7 +40,7 @@ object Session
 }
 
 
-class Session(thy_load: Thy_Load = new Thy_Load)
+class Session(val thy_load: Thy_Load)
 {
   /* global flags */
 
@@ -45,22 +48,22 @@ class Session(thy_load: Thy_Load = new Thy_Load)
   @volatile var verbose: Boolean = false
 
 
-  /* tuning parameters */  // FIXME properties or settings (!?)
+  /* tuning parameters */
 
-  val message_delay = Time.seconds(0.01)  // prover messages
-  val input_delay = Time.seconds(0.3)  // user input (e.g. text edits, cursor movement)
-  val output_delay = Time.seconds(0.1)  // prover output (markup, common messages)
-  val update_delay = Time.seconds(0.5)  // GUI layout updates
-  val load_delay = Time.seconds(0.5)  // file load operations (new buffers etc.)
-  val prune_delay = Time.seconds(60.0)  // prune history -- delete old versions
-  val prune_size = 0  // size of retained history
-  val syslog_limit = 100
+  def output_delay: Time = Time.seconds(0.1)  // prover output (markup, common messages)
+  def message_delay: Time = Time.seconds(0.01)  // incoming prover messages
+  def prune_delay: Time = Time.seconds(60.0)  // prune history -- delete old versions
+  def prune_size: Int = 0  // size of retained history
+  def syslog_limit: Int = 100
+  def reparse_limit: Int = 0
 
 
   /* pervasive event buses */
 
-  val global_settings = new Event_Bus[Session.Global_Settings.type]
+  val statistics = new Event_Bus[Session.Statistics]
+  val global_options = new Event_Bus[Session.Global_Options]
   val caret_focus = new Event_Bus[Session.Caret_Focus.type]
+  val raw_edits = new Event_Bus[Session.Raw_Edits]
   val commands_changed = new Event_Bus[Session.Commands_Changed]
   val phase_changed = new Event_Bus[Session.Phase]
   val syslog_messages = new Event_Bus[Isabelle_Process.Output]
@@ -107,8 +110,8 @@ class Session(thy_load: Thy_Load = new Thy_Load)
         case Text_Edits(previous, text_edits, version_result) =>
           val prev = previous.get_finished
           val (doc_edits, version) =
-            Timing.timeit("Thy_Syntax.text_edits", timing) {
-              Thy_Syntax.text_edits(prover_syntax, prev, text_edits)
+            Timing.timeit("Thy_Load.text_edits", timing) {
+              thy_load.text_edits(reparse_limit, prev, text_edits)
             }
           version_result.fulfill(version)
           sender ! Change(doc_edits, prev, version)
@@ -125,14 +128,8 @@ class Session(thy_load: Thy_Load = new Thy_Load)
 
   /* global state */
 
-  @volatile private var prover_syntax =
-    Outer_Syntax.init() +
-      // FIXME avoid hardwired stuff!?
-      ("hence", Keyword.PRF_ASM_GOAL, "then have") +
-      ("thus", Keyword.PRF_ASM_GOAL, "then show")
-
   private val syslog = Volatile(Queue.empty[XML.Elem])
-  def current_syslog(): String = cat_lines(syslog().iterator.map(msg => XML.content(msg).mkString))
+  def current_syslog(): String = cat_lines(syslog().iterator.map(XML.content))
 
   @volatile private var _phase: Session.Phase = Session.Inactive
   private def phase_=(new_phase: Session.Phase)
@@ -149,7 +146,7 @@ class Session(thy_load: Thy_Load = new Thy_Load)
   def recent_syntax(): Outer_Syntax =
   {
     val version = current_state().recent_finished.version.get_finished
-    if (version.is_init) prover_syntax
+    if (version.is_init) thy_load.base_syntax
     else version.syntax
   }
 
@@ -160,34 +157,34 @@ class Session(thy_load: Thy_Load = new Thy_Load)
 
   /* theory files */
 
-  def header_edit(name: Document.Node.Name, header: Document.Node_Header): Document.Edit_Text =
+  def header_edit(name: Document.Node.Name, header: Document.Node.Header): Document.Edit_Text =
   {
-    val header1: Document.Node_Header =
-      header match {
-        case Exn.Res(_) if (thy_load.is_loaded(name.theory)) =>
-          Exn.Exn(ERROR("Attempt to update loaded theory " + quote(name.theory)))
-        case _ => header
-      }
-    (name, Document.Node.Header(header1))
+    val header1 =
+      if (thy_load.loaded_theories(name.theory))
+        header.error("Attempt to update loaded theory " + quote(name.theory))
+      else header
+    (name, Document.Node.Deps(header1))
   }
 
 
   /* actor messages */
 
-  private case class Start(timeout: Time, args: List[String])
+  private case class Start(args: List[String])
   private case object Cancel_Execution
-  private case class Edit(edits: List[Document.Edit_Text])
   private case class Change(
     doc_edits: List[Document.Edit_Command],
     previous: Document.Version,
     version: Document.Version)
   private case class Messages(msgs: List[Isabelle_Process.Message])
+  private case class Finished_Scala(id: String, tag: Invoke_Scala.Tag.Value, result: String)
 
   private val (_, session_actor) = Simple_Thread.actor("session_actor", daemon = true)
   {
     val this_actor = self
 
     var prune_next = System.currentTimeMillis() + prune_delay.ms
+
+    var futures = Map.empty[String, java.util.concurrent.Future[Unit]]
 
 
     /* buffered prover messages */
@@ -320,8 +317,8 @@ class Session(thy_load: Thy_Load = new Thy_Load)
             case _: Document.State.Fail => bad_output(output)
           }
 
-        case Isabelle_Markup.Assign_Execs if output.is_protocol =>
-          XML.content(output.body).mkString match {
+        case Markup.Assign_Execs if output.is_protocol =>
+          XML.content(output.body) match {
             case Protocol.Assign(id, assign) =>
               try {
                 val cmds = global_state >>> (_.assign(id, assign))
@@ -337,8 +334,8 @@ class Session(thy_load: Thy_Load = new Thy_Load)
             prune_next = System.currentTimeMillis() + prune_delay.ms
           }
 
-        case Isabelle_Markup.Removed_Versions if output.is_protocol =>
-          XML.content(output.body).mkString match {
+        case Markup.Removed_Versions if output.is_protocol =>
+          XML.content(output.body) match {
             case Protocol.Removed(removed) =>
               try {
                 global_state >> (_.removed_versions(removed))
@@ -347,33 +344,37 @@ class Session(thy_load: Thy_Load = new Thy_Load)
             case _ => bad_output(output)
           }
 
-        case Isabelle_Markup.Invoke_Scala(name, id) if output.is_protocol =>
-          Future.fork {
-            val arg = XML.content(output.body).mkString
-            val (tag, res) = Invoke_Scala.method(name, arg)
-            prover.get.invoke_scala(id, tag, res)
+        case Markup.Invoke_Scala(name, id) if output.is_protocol =>
+          futures += (id ->
+            default_thread_pool.submit(() =>
+              {
+                val arg = XML.content(output.body)
+                val (tag, result) = Invoke_Scala.method(name, arg)
+                this_actor ! Finished_Scala(id, tag, result)
+              }))
+
+        case Markup.Cancel_Scala(id) if output.is_protocol =>
+          futures.get(id) match {
+            case Some(future) =>
+              future.cancel(true)
+              this_actor ! Finished_Scala(id, Invoke_Scala.Tag.INTERRUPT, "")
+            case None =>
           }
 
-        case Isabelle_Markup.Cancel_Scala(id) if output.is_protocol =>
-          System.err.println("cancel_scala " + id)  // FIXME actually cancel JVM task
+        case Markup.ML_Statistics(props) if output.is_protocol =>
+          statistics.event(Session.Statistics(props))
 
-        case Isabelle_Markup.Ready if output.is_protocol =>
-            phase = Session.Ready
+        case Markup.Task_Statistics(props) if output.is_protocol =>
+          // FIXME
 
-        case Isabelle_Markup.Loaded_Theory(name) if output.is_protocol =>
-          thy_load.register_thy(name)
+        case _ if output.is_init =>
+          phase = Session.Ready
 
-        case Isabelle_Markup.Command_Decl(name, kind) if output.is_protocol =>
-          prover_syntax += (name, kind)
+        case Markup.Return_Code(rc) if output.is_exit =>
+          if (rc == 0) phase = Session.Inactive
+          else phase = Session.Failed
 
-        case Isabelle_Markup.Keyword_Decl(name) if output.is_protocol =>
-          prover_syntax += name
-
-        case _ =>
-          if (output.is_exit && phase == Session.Startup) phase = Session.Failed
-          else if (output.is_exit) phase = Session.Inactive
-          else if (output.is_init || output.is_stdout) { }
-          else bad_output(output)
+        case _ => bad_output(output)
       }
     }
     //}}}
@@ -387,10 +388,10 @@ class Session(thy_load: Thy_Load = new Thy_Load)
       receiveWithin(delay_commands_changed.flush_timeout) {
         case TIMEOUT => delay_commands_changed.flush()
 
-        case Start(timeout, args) if prover.isEmpty =>
+        case Start(args) if prover.isEmpty =>
           if (phase == Session.Inactive || phase == Session.Failed) {
             phase = Session.Startup
-            prover = Some(new Isabelle_Process(timeout, receiver.invoke _, args) with Protocol)
+            prover = Some(new Isabelle_Process(receiver.invoke _, args) with Protocol)
           }
 
         case Stop =>
@@ -405,18 +406,26 @@ class Session(thy_load: Thy_Load = new Thy_Load)
           receiver.cancel()
           reply(())
 
+        case Session.Global_Options(options) if prover.isDefined =>
+          prover.get.options(options)
+
         case Cancel_Execution if prover.isDefined =>
           prover.get.cancel_execution()
 
-        case Edit(edits) if prover.isDefined =>
+        case raw @ Session.Raw_Edits(edits) if prover.isDefined =>
           prover.get.discontinue_execution()
 
           val previous = global_state().history.tip.version
           val version = Future.promise[Document.Version]
           val change = global_state >>> (_.continue_history(previous, edits, version))
+          raw_edits.event(raw)
           change_parser ! Text_Edits(previous, edits, version)
 
           reply(())
+
+        case Session.Dialog_Result(id, serial, result) if prover.isDefined =>
+          prover.get.dialog_result(serial, result)
+          handle_output(new Isabelle_Process.Output(Protocol.Dialog_Result(id, serial, result)))
 
         case Messages(msgs) =>
           msgs foreach {
@@ -424,15 +433,21 @@ class Session(thy_load: Thy_Load = new Thy_Load)
               all_messages.event(input)
 
             case output: Isabelle_Process.Output =>
-              handle_output(output)
-              if (output.is_syslog) syslog_messages.event(output)
               if (output.is_stdout || output.is_stderr) raw_output_messages.event(output)
+              else handle_output(output)
+              if (output.is_syslog) syslog_messages.event(output)
               all_messages.event(output)
           }
 
         case change: Change
         if prover.isDefined && global_state().is_assigned(change.previous) =>
           handle_change(change)
+
+        case Finished_Scala(id, tag, result) if prover.isDefined =>
+          if (futures.isDefinedAt(id)) {
+            prover.get.invoke_scala(id, tag, result)
+            futures -= id
+          }
 
         case bad if !bad.isInstanceOf[Change] =>
           System.err.println("session_actor: ignoring bad message " + bad)
@@ -444,32 +459,25 @@ class Session(thy_load: Thy_Load = new Thy_Load)
 
   /* actions */
 
-  def start(timeout: Time, args: List[String])
-  { session_actor ! Start(timeout, args) }
+  def start(args: List[String])
+  {
+    global_options += session_actor
+    session_actor ! Start(args)
+  }
 
-  def start(args: List[String]) { start (Time.seconds(25), args) }
-
-  def stop() { commands_changed_buffer !? Stop; change_parser !? Stop; session_actor !? Stop }
+  def stop()
+  {
+    global_options -= session_actor
+    commands_changed_buffer !? Stop
+    change_parser !? Stop
+    session_actor !? Stop
+  }
 
   def cancel_execution() { session_actor ! Cancel_Execution }
 
-  def edit(edits: List[Document.Edit_Text])
-  { session_actor !? Edit(edits) }
+  def update(edits: List[Document.Edit_Text])
+  { if (!edits.isEmpty) session_actor !? Session.Raw_Edits(edits) }
 
-  def init_node(name: Document.Node.Name,
-    header: Document.Node_Header, perspective: Text.Perspective, text: String)
-  {
-    edit(List(header_edit(name, header),
-      name -> Document.Node.Clear(),    // FIXME diff wrt. existing node
-      name -> Document.Node.Edits(List(Text.Edit.insert(0, text))),
-      name -> Document.Node.Perspective(perspective)))
-  }
-
-  def edit_node(name: Document.Node.Name,
-    header: Document.Node_Header, perspective: Text.Perspective, text_edits: List[Text.Edit])
-  {
-    edit(List(header_edit(name, header),
-      name -> Document.Node.Edits(text_edits),
-      name -> Document.Node.Perspective(perspective)))
-  }
+  def dialog_result(id: Document.ID, serial: Long, result: String)
+  { session_actor ! Session.Dialog_Result(id, serial, result) }
 }

@@ -8,7 +8,6 @@ Raw platform identification.
 package isabelle
 
 import java.lang.System
-import javax.swing.UIManager
 
 import scala.util.matching.Regex
 
@@ -59,20 +58,5 @@ object Platform
 
   val jvm_name: String = System.getProperty("java.vm.name")
 
-
-  /* Swing look-and-feel */
-
-  private def find_laf(name: String): Option[String] =
-    UIManager.getInstalledLookAndFeels().find(_.getName == name).map(_.getClassName)
-
-  def get_laf(): String =
-  {
-    if (is_windows || is_macos) UIManager.getSystemLookAndFeelClassName()
-    else
-      find_laf("Nimbus") orElse find_laf("GTK+") getOrElse
-      UIManager.getCrossPlatformLookAndFeelClassName()
-  }
-
-  def init_laf(): Unit = UIManager.setLookAndFeel(get_laf())
 }
 

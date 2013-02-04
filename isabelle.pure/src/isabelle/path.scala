@@ -8,6 +8,8 @@ roots (e.g. //foo) and variables (e.g. $BAR).
 package isabelle
 
 
+import java.io.{File => JFile}
+
 import scala.util.matching.Regex
 
 
@@ -27,7 +29,8 @@ object Path
   private def check_elem(s: String): String =
     if (s == "" || s == "~" || s == "~~") err_elem("Illegal", s)
     else
-      s.iterator.filter(c => c == '/' || c == '\\' || c == '$' || c == ':').toList match {
+      s.iterator.filter(c =>
+          c == '/' || c == '\\' || c == '$' || c == ':' || c == '"' || c == '\'').toList match {
         case Nil => s
         case bads =>
           err_elem ("Illegal character(s) " + commas_quote(bads.map(_.toString)) + " in", s)
@@ -93,8 +96,16 @@ object Path
     new Path(norm_elems(explode_elems(raw_elems) ++ roots))
   }
 
+  def is_ok(str: String): Boolean =
+    try { explode(str); true } catch { case ERROR(_) => false }
+
   def split(str: String): List[Path] =
     space_explode(':', str).filterNot(_.isEmpty).map(explode)
+
+
+  /* encode */
+
+  val encode: XML.Encode.T[Path] = (path => XML.Encode.string(path.implode))
 }
 
 
@@ -156,10 +167,25 @@ final class Path private(private val elems: List[Path.Elem]) // reversed element
     def eval(elem: Path.Elem): List[Path.Elem] =
       elem match {
         case Path.Variable(s) =>
-          Path.explode(Isabelle_System.getenv_strict(s)).elems
+          val path = Path.explode(Isabelle_System.getenv_strict(s))
+          if (path.elems.exists(_.isInstanceOf[Path.Variable]))
+            error ("Illegal path variable nesting: " + s + "=" + path.toString)
+          else path.elems
         case x => List(x)
       }
 
     new Path(Path.norm_elems(elems.map(eval).flatten))
   }
+
+
+  /* source position */
+
+  def position: Position.T = Position.File(implode)
+
+
+  /* platform file */
+
+  def file: JFile = Isabelle_System.platform_file(this)
+  def is_file: Boolean = file.isFile
+  def is_dir: Boolean = file.isDirectory
 }

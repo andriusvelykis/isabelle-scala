@@ -7,23 +7,70 @@ Position properties.
 package isabelle
 
 
+import java.io.{File => JFile}
+
+
 object Position
 {
   type T = Properties.T
 
-  val Line = new Properties.Int(Isabelle_Markup.LINE)
-  val Offset = new Properties.Int(Isabelle_Markup.OFFSET)
-  val End_Offset = new Properties.Int(Isabelle_Markup.END_OFFSET)
-  val File = new Properties.String(Isabelle_Markup.FILE)
-  val Id = new Properties.Long(Isabelle_Markup.ID)
+  val Line = new Properties.Int(Markup.LINE)
+  val Offset = new Properties.Int(Markup.OFFSET)
+  val End_Offset = new Properties.Int(Markup.END_OFFSET)
+  val File = new Properties.String(Markup.FILE)
+  val Id = new Properties.Long(Markup.ID)
+
+  val Def_Line = new Properties.Int(Markup.DEF_LINE)
+  val Def_Offset = new Properties.Int(Markup.DEF_OFFSET)
+  val Def_End_Offset = new Properties.Int(Markup.DEF_END_OFFSET)
+  val Def_File = new Properties.String(Markup.DEF_FILE)
+  val Def_Id = new Properties.Long(Markup.DEF_ID)
+
+  object Line_File
+  {
+    def unapply(pos: T): Option[(Int, String)] =
+      (pos, pos) match {
+        case (Line(i), File(name)) => Some((i, name))
+        case (_, File(name)) => Some((1, name))
+        case _ => None
+      }
+  }
+
+  object Def_Line_File
+  {
+    def unapply(pos: T): Option[(Int, String)] =
+      (pos, pos) match {
+        case (Def_Line(i), Def_File(name)) => Some((i, name))
+        case (_, Def_File(name)) => Some((1, name))
+        case _ => None
+      }
+  }
 
   object Range
   {
     def apply(range: Text.Range): T = Offset(range.start) ++ Offset(range.stop)
     def unapply(pos: T): Option[Text.Range] =
-      (Offset.unapply(pos), End_Offset.unapply(pos)) match {
-        case (Some(start), Some(stop)) if start <= stop => Some(Text.Range(start, stop))
-        case (Some(start), None) => Some(Text.Range(start, start + 1))
+      (pos, pos) match {
+        case (Offset(start), End_Offset(stop)) if start <= stop => Some(Text.Range(start, stop))
+        case (Offset(start), _) => Some(Text.Range(start, start + 1))
+        case _ => None
+      }
+  }
+
+  object Id_Offset
+  {
+    def unapply(pos: T): Option[(Long, Text.Offset)] =
+      (pos, pos) match {
+        case (Id(id), Offset(offset)) => Some((id, offset))
+        case _ => None
+      }
+  }
+
+  object Def_Id_Offset
+  {
+    def unapply(pos: T): Option[(Long, Text.Offset)] =
+      (pos, pos) match {
+        case (Def_Id(id), Def_Offset(offset)) => Some((id, offset))
         case _ => None
       }
   }
@@ -37,14 +84,16 @@ object Position
       }
   }
 
-  private val purge_pos = Map(
-    Isabelle_Markup.DEF_LINE -> Isabelle_Markup.LINE,
-    Isabelle_Markup.DEF_OFFSET -> Isabelle_Markup.OFFSET,
-    Isabelle_Markup.DEF_END_OFFSET -> Isabelle_Markup.END_OFFSET,
-    Isabelle_Markup.DEF_FILE -> Isabelle_Markup.FILE,
-    Isabelle_Markup.DEF_ID -> Isabelle_Markup.ID)
+  def purge(props: T): T = props.filterNot(p => Markup.POSITION_PROPERTIES(p._1))
 
-  def purge(props: T): T =
-    for ((x, y) <- props if !Isabelle_Markup.POSITION_PROPERTIES(x))
-      yield (if (purge_pos.isDefinedAt(x)) (purge_pos(x), y) else (x, y))
+
+  /* here: inlined formal markup */
+
+  def here(pos: T): String =
+    (Line.unapply(pos), File.unapply(pos)) match {
+      case (Some(i), None) => " (line " + i.toString + ")"
+      case (Some(i), Some(name)) => " (line " + i.toString + " of " + quote(name) + ")"
+      case (None, Some(name)) => " (file " + quote(name) + ")"
+      case _ => ""
+    }
 }

@@ -16,7 +16,7 @@ import java.nio.charset.{Charset, CodingErrorAction}
 import java.io.{InputStream, OutputStream, Reader, Writer, InputStreamReader, OutputStreamWriter,
   CharArrayReader, ByteArrayOutputStream}
 
-import scala.io.{Codec, Source, BufferedSource}
+import scala.io.{Codec, BufferedSource}
 
 
 object Isabelle_Encoding
@@ -37,12 +37,11 @@ class Isabelle_Encoding extends Encoding
     new CharArrayReader(Symbol.decode(source.mkString).toArray)
   }
 
-  override def getTextReader(in: InputStream): Reader =
-    text_reader(in, Standard_System.codec())
+  override def getTextReader(in: InputStream): Reader = text_reader(in, UTF8.codec())
 
   override def getPermissiveTextReader(in: InputStream): Reader =
   {
-    val codec = Standard_System.codec()
+    val codec = UTF8.codec()
     codec.onMalformedInput(CodingErrorAction.REPLACE)
     codec.onUnmappableCharacter(CodingErrorAction.REPLACE)
     text_reader(in, codec)
@@ -53,12 +52,12 @@ class Isabelle_Encoding extends Encoding
     val buffer = new ByteArrayOutputStream(BUFSIZE) {
       override def flush()
       {
-        val text = Symbol.encode(toString(Standard_System.charset_name))
-        out.write(text.getBytes(Standard_System.charset))
+        val text = Symbol.encode(toString(UTF8.charset_name))
+        out.write(text.getBytes(UTF8.charset))
         out.flush()
       }
       override def close() { out.close() }
     }
-    new OutputStreamWriter(buffer, Standard_System.charset.newEncoder())
+    new OutputStreamWriter(buffer, UTF8.charset.newEncoder())
   }
 }

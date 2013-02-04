@@ -31,11 +31,37 @@ object Exn
 
   private val runtime_exception = Class.forName("java.lang.RuntimeException")
 
-  def message(exn: Throwable): String =
-    if (exn.getClass == runtime_exception) {
+  def user_message(exn: Throwable): Option[String] =
+    if (exn.isInstanceOf[java.io.IOException]) {
       val msg = exn.getMessage
-      if (msg == null) "Error" else msg
+      Some(if (msg == null) "I/O error" else "I/O error: " + msg)
     }
-    else exn.toString
+    else if (exn.getClass == runtime_exception) {
+      val msg = exn.getMessage
+      Some(if (msg == null) "Error" else msg)
+    }
+    else if (exn.isInstanceOf[RuntimeException]) Some(exn.toString)
+    else None
+
+  def message(exn: Throwable): String =
+    user_message(exn) getOrElse exn.toString
+
+
+  /* recover from spurious crash */
+
+  def recover[A](e: => A): A =
+  {
+    capture(e) match {
+      case Res(x) => x
+      case Exn(exn) =>
+        capture(e) match {
+          case Res(x) =>
+            java.lang.System.err.println("Recovered from spurious crash after retry!")
+            exn.printStackTrace()
+            x
+          case Exn(_) => throw exn
+        }
+    }
+  }
 }
 

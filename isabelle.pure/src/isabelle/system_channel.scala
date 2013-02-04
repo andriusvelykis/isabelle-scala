@@ -8,7 +8,8 @@ named pipes or sockets.
 package isabelle
 
 
-import java.io.{InputStream, OutputStream, File, FileInputStream, FileOutputStream, IOException}
+import java.io.{InputStream, OutputStream, File => JFile, FileInputStream,
+  FileOutputStream, IOException}
 import java.net.{ServerSocket, InetAddress}
 
 
@@ -35,6 +36,8 @@ private object Fifo_Channel
 
 private class Fifo_Channel extends System_Channel
 {
+  require(!Platform.is_windows)
+
   private def mk_fifo(): String =
   {
     val i = Fifo_Channel.next_fifo()
@@ -42,26 +45,14 @@ private class Fifo_Channel extends System_Channel
       "FIFO=\"/tmp/isabelle-fifo-${PPID}-$$" + i + "\"\n" +
       "echo -n \"$FIFO\"\n" +
       "mkfifo -m 600 \"$FIFO\"\n"
-    val (out, err, rc) = Isabelle_System.bash(script)
-    if (rc == 0) out else error(err.trim)
+    val result = Isabelle_System.bash(script)
+    if (result.rc == 0) result.out else error(result.err)
   }
 
-  private def rm_fifo(fifo: String): Boolean =
-    Isabelle_System.platform_file(
-      Path.explode(if (Platform.is_windows) fifo + ".lnk" else fifo)).delete
+  private def rm_fifo(fifo: String): Boolean = (new JFile(fifo)).delete
 
-  private def fifo_input_stream(fifo: String): InputStream =
-  {
-    require(!Platform.is_windows)
-    new FileInputStream(fifo)
-  }
-
-  private def fifo_output_stream(fifo: String): OutputStream =
-  {
-    require(!Platform.is_windows)
-    new FileOutputStream(fifo)
-  }
-
+  private def fifo_input_stream(fifo: String): InputStream = new FileInputStream(fifo)
+  private def fifo_output_stream(fifo: String): OutputStream = new FileOutputStream(fifo)
 
   private val fifo1 = mk_fifo()
   private val fifo2 = mk_fifo()

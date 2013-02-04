@@ -23,7 +23,7 @@ object Document_Model
 {
   /* document model of buffer */
 
-  private val key = "isabelle.document_model"
+  private val key = "PIDE.document_model"
 
   def apply(buffer: Buffer): Option[Document_Model] =
   {
@@ -63,13 +63,15 @@ class Document_Model(val session: Session, val buffer: Buffer, val name: Documen
 {
   /* header */
 
-  def node_header(): Document.Node_Header =
+  def node_header(): Document.Node.Header =
   {
     Swing_Thread.require()
-    Isabelle.buffer_lock(buffer) {
+    JEdit_Lib.buffer_lock(buffer) {
       Exn.capture {
-        Isabelle.thy_load.check_header(name,
-          Thy_Header.read(buffer.getSegment(0, buffer.getLength)))
+        PIDE.thy_load.check_thy_text(name, buffer.getSegment(0, buffer.getLength))
+      } match {
+        case Exn.Res(header) => header
+        case Exn.Exn(exn) => Document.Node.bad_header(Exn.message(exn))
       }
     }
   }
@@ -77,20 +79,45 @@ class Document_Model(val session: Session, val buffer: Buffer, val name: Documen
 
   /* perspective */
 
-  def buffer_range(): Text.Range = Text.Range(0, (buffer.getLength - 1) max 0)
-
-  def perspective(): Text.Perspective =
+  def node_perspective(): Text.Perspective =
   {
     Swing_Thread.require()
     Text.Perspective(
       for {
-        doc_view <- Isabelle.document_views(buffer)
+        doc_view <- PIDE.document_views(buffer)
         range <- doc_view.perspective().ranges
       } yield range)
   }
 
 
-  /* pending text edits */
+  /* edits */
+
+  def init_edits(): List[Document.Edit_Text] =
+  {
+    Swing_Thread.require()
+    val header = node_header()
+    val text = JEdit_Lib.buffer_text(buffer)
+    val perspective = node_perspective()
+
+    List(session.header_edit(name, header),
+      name -> Document.Node.Clear(),
+      name -> Document.Node.Edits(List(Text.Edit.insert(0, text))),
+      name -> Document.Node.Perspective(perspective))
+  }
+
+  def node_edits(perspective: Text.Perspective, text_edits: List[Text.Edit])
+    : List[Document.Edit_Text] =
+  {
+    Swing_Thread.require()
+    val header = node_header()
+
+    List(session.header_edit(name, header),
+      name -> Document.Node.Edits(text_edits),
+      name -> Document.Node.Perspective(perspective))
+  }
+
+
+  /* pending edits */
 
   private object pending_edits  // owned by Swing thread
   {
@@ -104,38 +131,38 @@ class Document_Model(val session: Session, val buffer: Buffer, val name: Documen
       Swing_Thread.require()
 
       val edits = snapshot()
-      val new_perspective = perspective()
+      val new_perspective = node_perspective()
       if (!edits.isEmpty || last_perspective != new_perspective) {
         pending.clear
         last_perspective = new_perspective
-        session.edit_node(name, node_header(), new_perspective, edits)
+        session.update(node_edits(new_perspective, edits))
       }
     }
 
     private val delay_flush =
-      Swing_Thread.delay_last(session.input_delay) { flush() }
+      Swing_Thread.delay_last(PIDE.options.seconds("editor_input_delay")) { flush() }
 
     def +=(edit: Text.Edit)
     {
       Swing_Thread.require()
       pending += edit
-      delay_flush(true)
+      delay_flush.invoke()
     }
 
     def update_perspective()
     {
-      delay_flush(true)
+      delay_flush.invoke()
     }
 
     def init()
     {
       flush()
-      session.init_node(name, node_header(), perspective(), Isabelle.buffer_text(buffer))
+      session.update(init_edits())
     }
 
     def exit()
     {
-      delay_flush(false)
+      delay_flush.revoke()
       flush()
     }
   }
@@ -149,7 +176,7 @@ class Document_Model(val session: Session, val buffer: Buffer, val name: Documen
   def full_perspective()
   {
     pending_edits.flush()
-    session.edit_node(name, node_header(), Text.Perspective(List(buffer_range())), Nil)
+    session.update(node_edits(Text.Perspective(List(JEdit_Lib.buffer_range(buffer))), Nil))
   }
 
 
@@ -192,7 +219,7 @@ class Document_Model(val session: Session, val buffer: Buffer, val name: Documen
   private def activate()
   {
     buffer.addBufferListener(buffer_listener)
-    pending_edits.init()
+    pending_edits.flush()
     Token_Markup.refresh_buffer(buffer)
   }
 

@@ -35,25 +35,22 @@ object Document
   type Edit_Text = Edit[Text.Edit, Text.Perspective]
   type Edit_Command = Edit[(Option[Command], Option[Command]), Command.Perspective]
 
-  type Node_Header = Exn.Result[Node.Deps]
-
   object Node
   {
-    sealed case class Deps(
+    sealed case class Header(
       imports: List[Name],
-      keywords: List[Outer_Syntax.Decl],
-      uses: List[(String, Boolean)])
+      keywords: Thy_Header.Keywords,
+      uses: List[(String, Boolean)],
+      errors: List[String] = Nil)
+    {
+      def error(msg: String): Header = copy(errors = errors ::: List(msg))
+    }
+
+    def bad_header(msg: String): Header = Header(Nil, Nil, Nil, List(msg))
 
     object Name
     {
       val empty = Name("", "", "")
-      def apply(path: Path): Name =
-      {
-        val node = path.implode
-        val dir = path.dir.implode
-        val theory = Thy_Header.thy_name(node) getOrElse error("Bad theory file name: " + path)
-        Name(node, dir, theory)
-      }
 
       object Ordering extends scala.math.Ordering[Name]
       {
@@ -83,7 +80,7 @@ object Document
     }
     case class Clear[A, B]() extends Edit[A, B]
     case class Edits[A, B](edits: List[A]) extends Edit[A, B]
-    case class Header[A, B](header: Node_Header) extends Edit[A, B]
+    case class Deps[A, B](header: Header) extends Edit[A, B]
     case class Perspective[A, B](perspective: B) extends Edit[A, B]
 
     def command_starts(commands: Iterator[Command], offset: Text.Offset = 0)
@@ -103,30 +100,20 @@ object Document
   }
 
   final class Node private(
-    val header: Node_Header = Exn.Exn(ERROR("Bad theory header")),
+    val header: Node.Header = Node.bad_header("Bad theory header"),
     val perspective: Command.Perspective = Command.Perspective.empty,
-    val blobs: Map[String, Blob] = Map.empty,
     val commands: Linear_Set[Command] = Linear_Set.empty)
   {
     def clear: Node = new Node(header = header)
 
-    def update_header(new_header: Node_Header): Node =
-      new Node(new_header, perspective, blobs, commands)
+    def update_header(new_header: Node.Header): Node =
+      new Node(new_header, perspective, commands)
 
     def update_perspective(new_perspective: Command.Perspective): Node =
-      new Node(header, new_perspective, blobs, commands)
-
-    def update_blobs(new_blobs: Map[String, Blob]): Node =
-      new Node(header, perspective, new_blobs, commands)
+      new Node(header, new_perspective, commands)
 
     def update_commands(new_commands: Linear_Set[Command]): Node =
-      new Node(header, perspective, blobs, new_commands)
-
-    def imports: List[Node.Name] =
-      header match { case Exn.Res(deps) => deps.imports case _ => Nil }
-
-    def keywords: List[Outer_Syntax.Decl] =
-      header match { case Exn.Res(deps) => deps.keywords case _ => Nil }
+      new Node(header, perspective, new_commands)
 
 
     /* commands */
@@ -190,7 +177,7 @@ object Document
     def + (entry: (Node.Name, Node)): Nodes =
     {
       val (name, node) = entry
-      val imports = node.imports
+      val imports = node.header.imports
       val graph1 =
         (graph.default_node(name, Node.empty) /: imports)((g, p) => g.default_node(p, Node.empty))
       val graph2 = (graph1 /: graph1.imm_preds(name))((g, dep) => g.del_edge(dep, name))
@@ -284,16 +271,18 @@ object Document
   {
     val state: State
     val version: Version
+    val node_name: Node.Name
     val node: Node
     val is_outdated: Boolean
     def convert(i: Text.Offset): Text.Offset
     def convert(range: Text.Range): Text.Range
     def revert(i: Text.Offset): Text.Offset
     def revert(range: Text.Range): Text.Range
+    def eq_markup(other: Snapshot): Boolean
     def cumulate_markup[A](range: Text.Range, info: A, elements: Option[Set[String]],
-      result: PartialFunction[(A, Text.Markup), A]): Stream[Text.Info[A]]
+      result: Command.State => PartialFunction[(A, Text.Markup), A]): Stream[Text.Info[A]]
     def select_markup[A](range: Text.Range, elements: Option[Set[String]],
-      result: PartialFunction[Text.Markup, A]): Stream[Text.Info[A]]
+      result: Command.State => PartialFunction[Text.Markup, A]): Stream[Text.Info[A]]
   }
 
   type Assign = List[(Document.Command_ID, Option[Document.Exec_ID])]  // exec state assignment
@@ -349,7 +338,7 @@ object Document
     def define_command(command: Command): State =
     {
       val id = command.id
-      copy(commands = commands + (id -> command.empty_state))
+      copy(commands = commands + (id -> command.init_state))
     }
 
     def defined_command(id: Command_ID): Boolean = commands.isDefinedAt(id)
@@ -372,12 +361,12 @@ object Document
     def accumulate(id: ID, message: XML.Elem): (Command.State, State) =
       execs.get(id) match {
         case Some(st) =>
-          val new_st = st + message
+          val new_st = st + (id, message)
           (new_st, copy(execs = execs + (id -> new_st)))
         case None =>
           commands.get(id) match {
             case Some(st) =>
-              val new_st = st + message
+              val new_st = st + (id, message)
               (new_st, copy(commands = commands + (id -> new_st)))
             case None => fail
           }
@@ -473,13 +462,16 @@ object Document
       catch {
         case _: State.Fail =>
           try { the_command_state(command.id) }
-          catch { case _: State.Fail => command.empty_state }
+          catch { case _: State.Fail => command.init_state }
       }
     }
 
+    def markup_to_XML(version: Version, node: Node, filter: XML.Elem => Boolean): XML.Body =
+      node.commands.toList.map(cmd => command_state(version, cmd).markup_to_XML(filter)).flatten
 
     // persistent user-view
-    def snapshot(name: Node.Name, pending_edits: List[Text.Edit]): Snapshot =
+    def snapshot(name: Node.Name = Node.Name.empty, pending_edits: List[Text.Edit] = Nil)
+      : Snapshot =
     {
       val stable = recent_stable
       val latest = history.tip
@@ -494,6 +486,7 @@ object Document
       {
         val state = State.this
         val version = stable.version.get_finished
+        val node_name = name
         val node = version.nodes(name)
         val is_outdated = !(pending_edits.isEmpty && latest == stable)
 
@@ -502,30 +495,45 @@ object Document
         def convert(range: Text.Range) = (range /: edits)((r, edit) => edit.convert(r))
         def revert(range: Text.Range) = (range /: reverse_edits)((r, edit) => edit.revert(r))
 
+        def eq_markup(other: Snapshot): Boolean =
+          !is_outdated && !other.is_outdated &&
+            node.commands.size == other.node.commands.size &&
+            ((node.commands.iterator zip other.node.commands.iterator) forall {
+              case (cmd1, cmd2) =>
+                cmd1.source == cmd2.source &&
+                (state.command_state(version, cmd1).markup eq
+                 other.state.command_state(other.version, cmd2).markup)
+            })
+
         def cumulate_markup[A](range: Text.Range, info: A, elements: Option[Set[String]],
-          result: PartialFunction[(A, Text.Markup), A]): Stream[Text.Info[A]] =
+          result: Command.State => PartialFunction[(A, Text.Markup), A]): Stream[Text.Info[A]] =
         {
           val former_range = revert(range)
           for {
             (command, command_start) <- node.command_range(former_range).toStream
-            Text.Info(r0, a) <- state.command_state(version, command).markup.
+            st = state.command_state(version, command)
+            res = result(st)
+            Text.Info(r0, a) <- st.markup.
               cumulate[A]((former_range - command_start).restrict(command.range), info, elements,
                 {
                   case (a, Text.Info(r0, b))
-                  if result.isDefinedAt((a, Text.Info(convert(r0 + command_start), b))) =>
-                    result((a, Text.Info(convert(r0 + command_start), b)))
+                  if res.isDefinedAt((a, Text.Info(convert(r0 + command_start), b))) =>
+                    res((a, Text.Info(convert(r0 + command_start), b)))
                 })
           } yield Text.Info(convert(r0 + command_start), a)
         }
 
         def select_markup[A](range: Text.Range, elements: Option[Set[String]],
-          result: PartialFunction[Text.Markup, A]): Stream[Text.Info[A]] =
+          result: Command.State => PartialFunction[Text.Markup, A]): Stream[Text.Info[A]] =
         {
-          val result1 =
+          def result1(st: Command.State) =
+          {
+            val res = result(st)
             new PartialFunction[(Option[A], Text.Markup), Option[A]] {
-              def isDefinedAt(arg: (Option[A], Text.Markup)): Boolean = result.isDefinedAt(arg._2)
-              def apply(arg: (Option[A], Text.Markup)): Option[A] = Some(result(arg._2))
+              def isDefinedAt(arg: (Option[A], Text.Markup)): Boolean = res.isDefinedAt(arg._2)
+              def apply(arg: (Option[A], Text.Markup)): Option[A] = Some(res(arg._2))
             }
+          }
           for (Text.Info(r, Some(x)) <- cumulate_markup(range, None, elements, result1))
             yield Text.Info(r, x)
         }

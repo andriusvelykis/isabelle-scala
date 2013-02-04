@@ -1,7 +1,7 @@
 /*  Title:      Pure/System/invoke_scala.scala
     Author:     Makarius
 
-JVM method invocation service via Scala layer.
+JVM method invocation service via Isabelle/Scala.
 */
 
 package isabelle
@@ -49,6 +49,7 @@ object Invoke_Scala
     val OK = Value("1")
     val ERROR = Value("2")
     val FAIL = Value("3")
+    val INTERRUPT = Value("4")
   }
 
   def method(name: String, arg: String): (Tag.Value, String) =
@@ -57,6 +58,7 @@ object Invoke_Scala
         Exn.capture { f(arg) } match {
           case Exn.Res(null) => (Tag.NULL, "")
           case Exn.Res(res) => (Tag.OK, res)
+          case Exn.Exn(_: InterruptedException) => (Tag.INTERRUPT, "")
           case Exn.Exn(e) => (Tag.ERROR, Exn.message(e))
         }
       case Exn.Exn(e) => (Tag.FAIL, Exn.message(e))

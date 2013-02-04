@@ -14,6 +14,17 @@ object Properties
 
   object Value
   {
+    object Boolean
+    {
+      def apply(x: scala.Boolean): java.lang.String = x.toString
+      def unapply(s: java.lang.String): Option[scala.Boolean] =
+        s match {
+          case "true" => Some(true)
+          case "false" => Some(false)
+          case _ => None
+        }
+    }
+
     object Int
     {
       def apply(x: scala.Int): java.lang.String = x.toString
@@ -52,7 +63,17 @@ object Properties
       props.find(_._1 == name).map(_._2)
   }
 
-  class Int(name: java.lang.String)
+  class Boolean(val name: java.lang.String)
+  {
+    def apply(value: scala.Boolean): T = List((name, Value.Boolean(value)))
+    def unapply(props: T): Option[scala.Boolean] =
+      props.find(_._1 == name) match {
+        case None => None
+        case Some((_, value)) => Value.Boolean.unapply(value)
+      }
+  }
+
+  class Int(val name: java.lang.String)
   {
     def apply(value: scala.Int): T = List((name, Value.Int(value)))
     def unapply(props: T): Option[scala.Int] =
@@ -62,7 +83,7 @@ object Properties
       }
   }
 
-  class Long(name: java.lang.String)
+  class Long(val name: java.lang.String)
   {
     def apply(value: scala.Long): T = List((name, Value.Long(value)))
     def unapply(props: T): Option[scala.Long] =
@@ -72,7 +93,7 @@ object Properties
       }
   }
 
-  class Double(name: java.lang.String)
+  class Double(val name: java.lang.String)
   {
     def apply(value: scala.Double): T = List((name, Value.Double(value)))
     def unapply(props: T): Option[scala.Double] =

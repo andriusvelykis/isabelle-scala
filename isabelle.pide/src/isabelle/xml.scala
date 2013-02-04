@@ -7,12 +7,9 @@ Untyped XML trees and basic data representation.
 
 package isabelle
 
-import java.lang.System
 import java.util.WeakHashMap
 import java.lang.ref.WeakReference
 import javax.xml.parsers.DocumentBuilderFactory
-
-import scala.collection.mutable
 
 
 object XML
@@ -33,7 +30,59 @@ object XML
   type Body = List[Tree]
 
 
-  /* string representation */
+  /* wrapped elements */
+
+  val XML_ELEM = "xml_elem";
+  val XML_NAME = "xml_name";
+  val XML_BODY = "xml_body";
+
+  object Wrapped_Elem
+  {
+    def apply(markup: Markup, body1: Body, body2: Body): XML.Elem =
+      Elem(Markup(XML_ELEM, (XML_NAME, markup.name) :: markup.properties),
+        Elem(Markup(XML_BODY, Nil), body1) :: body2)
+
+    def unapply(tree: Tree): Option[(Markup, Body, Body)] =
+      tree match {
+        case
+          Elem(Markup(XML_ELEM, (XML_NAME, name) :: props),
+            Elem(Markup(XML_BODY, Nil), body1) :: body2) =>
+          Some(Markup(name, props), body1, body2)
+        case _ => None
+      }
+  }
+
+
+  /* traverse text */
+
+  def traverse_text[A](body: Body)(a: A)(op: (A, String) => A): A =
+  {
+    def traverse(x: A, t: Tree): A =
+      t match {
+        case Wrapped_Elem(_, _, ts) => (x /: ts)(traverse)
+        case Elem(_, ts) => (x /: ts)(traverse)
+        case Text(s) => op(x, s)
+      }
+    (a /: body)(traverse)
+  }
+
+  def text_length(body: Body): Int = traverse_text(body)(0) { case (n, s) => n + s.length }
+
+
+  /* text content */
+
+  def content(body: Body): String =
+  {
+    val text = new StringBuilder(text_length(body))
+    traverse_text(body)(()) { case (_, s) => text.append(s) }
+    text.toString
+  }
+
+  def content(tree: Tree): String = content(List(tree))
+
+
+
+  /** string representation **/
 
   def string_of_body(body: Body): String =
   {
@@ -69,20 +118,6 @@ object XML
   }
 
   def string_of_tree(tree: XML.Tree): String = string_of_body(List(tree))
-
-
-  /* text content */
-
-  def content_stream(tree: Tree): Stream[String] =
-    tree match {
-      case Elem(_, body) => content_stream(body)
-      case Text(content) => Stream(content)
-    }
-  def content_stream(body: Body): Stream[String] =
-    body.toStream.flatten(content_stream(_))
-
-  def content(tree: Tree): Iterator[String] = content_stream(tree).iterator
-  def content(body: Body): Iterator[String] = content_stream(body).iterator
 
 
 
@@ -156,35 +191,6 @@ object XML
     def cache_markup(x: Markup): Markup = synchronized { _cache_markup(x) }
     def cache_tree(x: XML.Tree): XML.Tree = synchronized { _cache_tree(x) }
     def cache_body(x: XML.Body): XML.Body = synchronized { _cache_body(x) }
-  }
-
-
-
-  /** document object model (W3C DOM) **/
-
-  def get_data(node: org.w3c.dom.Node): Option[XML.Tree] =
-    node.getUserData(Markup.Data.name) match {
-      case tree: XML.Tree => Some(tree)
-      case _ => None
-    }
-
-  def document_node(doc: org.w3c.dom.Document, tree: Tree): org.w3c.dom.Node =
-  {
-    def DOM(tr: Tree): org.w3c.dom.Node = tr match {
-      case Elem(Markup.Data, List(data, t)) =>
-        val node = DOM(t)
-        node.setUserData(Markup.Data.name, data, null)
-        node
-      case Elem(Markup(name, atts), ts) =>
-        if (name == Markup.Data.name)
-          error("Malformed data element: " + tr.toString)
-        val node = doc.createElement(name)
-        for ((name, value) <- atts) node.setAttribute(name, value)
-        for (t <- ts) node.appendChild(DOM(t))
-        node
-      case Text(txt) => doc.createTextNode(txt)
-    }
-    DOM(tree)
   }
 
 

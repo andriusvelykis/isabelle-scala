@@ -4,69 +4,70 @@
 
 #identification
 plugin.isabelle.jedit.Plugin.name=Isabelle
-plugin.isabelle.jedit.Plugin.author=Johannes Hölzl, Fabian Immler, Makarius Wenzel
-plugin.isabelle.jedit.Plugin.version=0.1.0
-plugin.isabelle.jedit.Plugin.description=Isabelle/Isar asynchronous proof document editing
+plugin.isabelle.jedit.Plugin.author=Johannes Hölzl, Fabian Immler, Markus Kaiser, Makarius Wenzel
+plugin.isabelle.jedit.Plugin.version=1.0.0
+plugin.isabelle.jedit.Plugin.description=Isabelle Prover IDE
 
 #system parameters
 plugin.isabelle.jedit.Plugin.activate=startup
 plugin.isabelle.jedit.Plugin.usePluginHome=false
 
 #dependencies
-plugin.isabelle.jedit.Plugin.depend.0=jdk 1.6
-plugin.isabelle.jedit.Plugin.depend.1=jedit 04.03.99.00
-plugin.isabelle.jedit.Plugin.depend.2=plugin console.ConsolePlugin 4.4.1
-plugin.isabelle.jedit.Plugin.depend.3=plugin errorlist.ErrorListPlugin 1.8
-plugin.isabelle.jedit.Plugin.depend.4=plugin sidekick.SideKickPlugin 0.8
-plugin.isabelle.jedit.Plugin.depend.5=plugin gatchan.jedit.hyperlinks.HyperlinksPlugin 1.0.1
+plugin.isabelle.jedit.Plugin.depend.0=jdk 1.7
+plugin.isabelle.jedit.Plugin.depend.1=jedit 05.00.00.00
+plugin.isabelle.jedit.Plugin.depend.2=plugin console.ConsolePlugin 5.0
+plugin.isabelle.jedit.Plugin.depend.3=plugin errorlist.ErrorListPlugin 2.1
+plugin.isabelle.jedit.Plugin.depend.4=plugin sidekick.SideKickPlugin 1.4
+plugin.isabelle.jedit.Plugin.depend.5=plugin gatchan.highlight.HighlightPlugin 1.9.10
 
 #options
-plugin.isabelle.jedit.Plugin.option-pane=isabelle
-options.isabelle.label=Isabelle
-options.isabelle.code=new isabelle.jedit.Isabelle_Options();
-options.isabelle.logic.title=Logic
-options.isabelle.relative-font-size.title=Relative Font Size
-options.isabelle.relative-font-size=100
-options.isabelle.tooltip-font-size.title=Tooltip Font Size
-options.isabelle.tooltip-font-size=10
-options.isabelle.tooltip-margin.title=Tooltip Margin
-options.isabelle.tooltip-margin=60
-options.isabelle.tooltip-dismiss-delay.title=Tooltip Dismiss Delay (global)
-options.isabelle.tooltip-dismiss-delay=8.0
-options.isabelle.startup-timeout=25.0
-options.isabelle.auto-start.title=Auto Start
-options.isabelle.auto-start=true
-
-#actions
-isabelle.check-buffer.label=Commence full proof checking of current buffer
-isabelle.check-buffer.shortcut=C+e SPACE
-isabelle.cancel-execution.label=Cancel current proof checking process
-isabelle.cancel-execution.shortcut=C+e BACK_SPACE
-isabelle.input-isub.label=Input subscript
-isabelle.input-isub.shortcut=C+e DOWN
-isabelle.input-isup.label=Input superscript
-isabelle.input-isup.shortcut=C+e UP
-isabelle.input-bold.label=Input bold face
-isabelle.input-bold.shortcut=C+e RIGHT
+plugin.isabelle.jedit.Plugin.option-group=isabelle-general isabelle-rendering
+options.isabelle-general.label=General
+options.isabelle-general.code=new isabelle.jedit.Isabelle_Options1();
+options.isabelle-rendering.label=Rendering
+options.isabelle-rendering.code=new isabelle.jedit.Isabelle_Options2();
 
 #menu actions
 plugin.isabelle.jedit.Plugin.menu.label=Isabelle
-plugin.isabelle.jedit.Plugin.menu=isabelle.session-panel isabelle.output-panel isabelle.raw-output-panel isabelle.protocol-panel
-isabelle.session-panel.label=Prover Session panel
+plugin.isabelle.jedit.Plugin.menu= \
+  isabelle.monitor-panel \
+  isabelle.output-panel \
+  isabelle.protocol-panel \
+  isabelle.raw-output-panel \
+  isabelle.readme-panel \
+  isabelle.symbols-panel \
+  isabelle.syslog-panel \
+  isabelle.theories-panel
+isabelle.monitor-panel.label=Monitor panel
 isabelle.output-panel.label=Output panel
-isabelle.raw-output-panel.label=Raw Output panel
 isabelle.protocol-panel.label=Protocol panel
+isabelle.raw-output-panel.label=Raw Output panel
+isabelle.readme-panel.label=README panel
+isabelle.symbols-panel.label=Symbols panel
+isabelle.syslog-panel.label=Syslog panel
+isabelle.theories-panel.label=Theories panel
 
 #dockables
-isabelle-session.title=Prover Session
+isabelle-graphview.title=Graphview
+isabelle-info.title=Info
+isabelle-monitor.title=Monitor
 isabelle-output.title=Output
-isabelle-raw-output.title=Raw Output
 isabelle-protocol.title=Protocol
+isabelle-raw-output.title=Raw Output
+isabelle-readme.title=README
+isabelle-symbols.title=Symbols
+isabelle-syslog.title=Syslog
+isabelle-theories.title=Theories
 
 #SideKick
-sidekick.parser.isabelle.label=Isabelle
+mode.isabelle-options.folding=sidekick
+mode.isabelle-options.sidekick.parser=isabelle-options
+mode.isabelle-root.folding=sidekick
+mode.isabelle-root.sidekick.parser=isabelle-root
+mode.isabelle.customSettings=true
+mode.isabelle.folding=sidekick
 mode.isabelle.sidekick.parser=isabelle
+mode.isabelle.sidekick.showStatusWindow.label=true
 mode.ml.sidekick.parser=isabelle
+sidekick.parser.isabelle.label=Isabelle
 
-#Hyperlinks
-mode.isabelle.hyperlink.source=isabelle

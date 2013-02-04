@@ -20,8 +20,7 @@ import javax.swing.{Icon, DefaultListCellRenderer, ListCellRenderer, JList}
 
 import org.gjt.sp.jedit.{Buffer, EditPane, TextUtilities, View}
 import errorlist.DefaultErrorSource
-import sidekick.{SideKickParser, SideKickParsedData, SideKickCompletion,
-  SideKickCompletionPopup, IAsset}
+import sidekick.{SideKickParser, SideKickParsedData, SideKickCompletion, IAsset}
 
 
 object Isabelle_Sidekick
@@ -48,14 +47,15 @@ object Isabelle_Sidekick
 }
 
 
-abstract class Isabelle_Sidekick(name: String) extends SideKickParser(name)
+class Isabelle_Sidekick(name: String, get_syntax: => Option[Outer_Syntax])
+  extends SideKickParser(name)
 {
   /* parsing */
 
   @volatile protected var stopped = false
   override def stop() = { stopped = true }
 
-  def parser(data: SideKickParsedData, model: Document_Model): Unit
+  def parser(buffer: Buffer, syntax: Outer_Syntax, data: SideKickParsedData): Boolean = false
 
   def parse(buffer: Buffer, error_source: DefaultErrorSource): SideKickParsedData =
   {
@@ -66,12 +66,16 @@ abstract class Isabelle_Sidekick(name: String) extends SideKickParser(name)
     val root = data.root
     data.getAsset(root).setEnd(Isabelle_Sidekick.int_to_pos(buffer.getLength))
 
-    Swing_Thread.now { Document_Model(buffer) } match {
-      case Some(model) =>
-        parser(data, model)
-        if (stopped) root.add(new DefaultMutableTreeNode("<parser stopped>"))
-      case None => root.add(new DefaultMutableTreeNode("<buffer inactive>"))
-    }
+    val syntax = get_syntax
+    val ok =
+      if (syntax.isDefined) {
+        val ok = parser(buffer, syntax.get, data)
+        if (stopped) { root.add(new DefaultMutableTreeNode("<stopped>")); true }
+        else ok
+      }
+      else false
+    if (!ok) root.add(new DefaultMutableTreeNode("<ignored>"))
+
     data
   }
 
@@ -86,16 +90,15 @@ abstract class Isabelle_Sidekick(name: String) extends SideKickParser(name)
     Swing_Thread.assert()
 
     val buffer = pane.getBuffer
-    Isabelle.buffer_lock(buffer) {
-      Document_Model(buffer) match {
+    JEdit_Lib.buffer_lock(buffer) {
+      get_syntax match {
         case None => null
-        case Some(model) =>
+        case Some(syntax) =>
           val line = buffer.getLineOfOffset(caret)
           val start = buffer.getLineStartOffset(line)
           val text = buffer.getSegment(start, caret - start)
 
-          val completion = model.session.recent_syntax().completion
-          completion.complete(text) match {
+          syntax.completion.complete(text) match {
             case None => null
             case Some((word, cs)) =>
               val ds =
@@ -106,11 +109,12 @@ abstract class Isabelle_Sidekick(name: String) extends SideKickParser(name)
               else
                 new SideKickCompletion(pane.getView, word, ds.toArray.asInstanceOf[Array[Object]]) {
                   override def getRenderer() =
-                    new ListCellRenderer {
-                      val default_renderer = new DefaultListCellRenderer
+                    new ListCellRenderer[Any] {
+                      val default_renderer =
+                        (new DefaultListCellRenderer).asInstanceOf[ListCellRenderer[Any]]
 
                       override def getListCellRendererComponent(
-                          list: JList, value: Any, index: Int,
+                          list: JList[_ <: Any], value: Any, index: Int,
                           selected: Boolean, focus: Boolean): Component =
                       {
                         val renderer: Component =
@@ -128,14 +132,16 @@ abstract class Isabelle_Sidekick(name: String) extends SideKickParser(name)
 }
 
 
-class Isabelle_Sidekick_Default extends Isabelle_Sidekick("isabelle")
+class Isabelle_Sidekick_Structure(
+    name: String,
+    get_syntax: => Option[Outer_Syntax],
+    node_name: Buffer => Option[Document.Node.Name])
+  extends Isabelle_Sidekick(name, get_syntax)
 {
   import Thy_Syntax.Structure
 
-  def parser(data: SideKickParsedData, model: Document_Model)
+  override def parser(buffer: Buffer, syntax: Outer_Syntax, data: SideKickParsedData): Boolean =
   {
-    val syntax = model.session.recent_syntax()
-
     def make_tree(offset: Text.Offset, entry: Structure.Entry): List[DefaultMutableTreeNode] =
       entry match {
         case Structure.Block(name, body) =>
@@ -157,36 +163,56 @@ class Isabelle_Sidekick_Default extends Isabelle_Sidekick("isabelle")
         case _ => Nil
       }
 
-    val text = Isabelle.buffer_text(model.buffer)
-    val structure = Structure.parse(syntax, model.name, text)
-
-    make_tree(0, structure) foreach (node => data.root.add(node))
+    node_name(buffer) match {
+      case Some(name) =>
+        val text = JEdit_Lib.buffer_text(buffer)
+        val structure = Structure.parse(syntax, name, text)
+        make_tree(0, structure) foreach (node => data.root.add(node))
+        true
+      case None => false
+    }
   }
 }
 
 
-class Isabelle_Sidekick_Raw extends Isabelle_Sidekick("isabelle-raw")
-{
-  def parser(data: SideKickParsedData, model: Document_Model)
-  {
-    val root = data.root
-    val snapshot = Swing_Thread.now { model.snapshot() }  // FIXME cover all nodes (!??)
-    for ((command, command_start) <- snapshot.node.command_range() if !stopped) {
-      snapshot.state.command_state(snapshot.version, command).markup
-        .swing_tree(root)((info: Text.Info[List[XML.Elem]]) =>
-          {
-            val range = info.range + command_start
-            val content = command.source(info.range).replace('\n', ' ')
-            val info_text =
-              Pretty.formatted(Library.separate(Pretty.FBreak, info.info), margin = 40).mkString
+class Isabelle_Sidekick_Default extends Isabelle_Sidekick_Structure(
+  "isabelle", PIDE.get_recent_syntax, PIDE.thy_load.buffer_node_name)
 
-            new DefaultMutableTreeNode(
-              new Isabelle_Sidekick.Asset(command.toString, range.start, range.stop) {
-                override def getShortString: String = content
-                override def getLongString: String = info_text
-                override def toString = quote(content) + " " + range.toString
+
+class Isabelle_Sidekick_Options extends Isabelle_Sidekick_Structure(
+  "isabelle-options", Some(Options.options_syntax), PIDE.thy_load.buffer_node_dummy)
+
+
+class Isabelle_Sidekick_Root extends Isabelle_Sidekick_Structure(
+  "isabelle-root", Some(Build.root_syntax), PIDE.thy_load.buffer_node_dummy)
+
+
+class Isabelle_Sidekick_Raw extends Isabelle_Sidekick("isabelle-raw", PIDE.get_recent_syntax)
+{
+  override def parser(buffer: Buffer, syntax: Outer_Syntax, data: SideKickParsedData): Boolean =
+  {
+    Swing_Thread.now { Document_Model(buffer).map(_.snapshot) } match {
+      case Some(snapshot) =>
+        val root = data.root
+        for ((command, command_start) <- snapshot.node.command_range() if !stopped) {
+          Markup_Tree_UI.swing_tree(snapshot.state.command_state(snapshot.version, command).markup,
+            root, (info: Text.Info[List[XML.Elem]]) =>
+              {
+                val range = info.range + command_start
+                val content = command.source(info.range).replace('\n', ' ')
+                val info_text =
+                  Pretty.formatted(Library.separate(Pretty.FBreak, info.info), margin = 40).mkString
+
+                new DefaultMutableTreeNode(
+                  new Isabelle_Sidekick.Asset(command.toString, range.start, range.stop) {
+                    override def getShortString: String = content
+                    override def getLongString: String = info_text
+                    override def toString = quote(content) + " " + range.toString
+                  })
               })
-          })
+        }
+        true
+      case None => false
     }
   }
 }

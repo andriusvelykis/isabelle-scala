@@ -1,5 +1,5 @@
 /*  Title:      Tools/jEdit/src/isabelle_options.scala
-    Author:     Johannes Hölzl, TU Munich
+    Author:     Makarius
 
 Editor pane for plugin options.
 */
@@ -9,60 +9,62 @@ package isabelle.jedit
 
 import isabelle._
 
-import javax.swing.JSpinner
-
-import scala.swing.CheckBox
-
-import org.gjt.sp.jedit.AbstractOptionPane
+import org.gjt.sp.jedit.{jEdit, AbstractOptionPane}
 
 
-class Isabelle_Options extends AbstractOptionPane("isabelle")
+abstract class Isabelle_Options(name: String) extends AbstractOptionPane(name)
 {
-  private val logic_selector = Isabelle.logic_selector(Isabelle.Property("logic"))
-  private val auto_start = new CheckBox()
-  private val relative_font_size = new JSpinner()
-  private val tooltip_font_size = new JSpinner()
-  private val tooltip_margin = new JSpinner()
-  private val tooltip_dismiss_delay = new JSpinner()
+  protected val components: List[(String, List[Option_Component])]
 
   override def _init()
   {
-    addComponent(Isabelle.Property("logic.title"),
-      logic_selector.peer.asInstanceOf[java.awt.Component])
+    val dummy_property = "options.isabelle.dummy"
 
-    addComponent(Isabelle.Property("auto-start.title"), auto_start.peer)
-    auto_start.selected = Isabelle.Boolean_Property("auto-start")
-
-    relative_font_size.setValue(Isabelle.Int_Property("relative-font-size", 100))
-    addComponent(Isabelle.Property("relative-font-size.title"), relative_font_size)
-
-    tooltip_font_size.setValue(Isabelle.Int_Property("tooltip-font-size", 10))
-    addComponent(Isabelle.Property("tooltip-font-size.title"), tooltip_font_size)
-
-    tooltip_margin.setValue(Isabelle.Int_Property("tooltip-margin", 40))
-    addComponent(Isabelle.Property("tooltip-margin.title"), tooltip_margin)
-
-    tooltip_dismiss_delay.setValue(
-      Isabelle.Time_Property("tooltip-dismiss-delay", Time.seconds(8.0)).ms.toInt)
-    addComponent(Isabelle.Property("tooltip-dismiss-delay.title"), tooltip_dismiss_delay)
+    for ((s, cs) <- components) {
+      if (s != "") {
+        jEdit.setProperty(dummy_property, s)
+        addSeparator(dummy_property)
+        jEdit.setProperty(dummy_property, null)
+      }
+      cs.foreach(c => addComponent(c.title, c.peer))
+    }
   }
 
   override def _save()
   {
-    Isabelle.Property("logic") = logic_selector.selection.item.name
-
-    Isabelle.Boolean_Property("auto-start") = auto_start.selected
-
-    Isabelle.Int_Property("relative-font-size") =
-      relative_font_size.getValue().asInstanceOf[Int]
-
-    Isabelle.Int_Property("tooltip-font-size") =
-      tooltip_font_size.getValue().asInstanceOf[Int]
-
-    Isabelle.Int_Property("tooltip-margin") =
-      tooltip_margin.getValue().asInstanceOf[Int]
-
-    Isabelle.Time_Property("tooltip-dismiss-delay") =
-      Time.ms(tooltip_dismiss_delay.getValue().asInstanceOf[Int])
+    for ((_, cs) <- components) cs.foreach(_.save())
   }
 }
+
+
+class Isabelle_Options1 extends Isabelle_Options("isabelle-general")
+{
+  // FIXME avoid hard-wired stuff
+  private val relevant_options =
+    Set("jedit_logic", "jedit_font_scale", "jedit_symbols_search_limit", "jedit_text_overview_limit",
+      "jedit_tooltip_bounds", "jedit_tooltip_font_scale", "jedit_tooltip_margin",
+      "threads", "threads_trace", "parallel_proofs", "parallel_proofs_threshold",
+      "editor_load_delay", "editor_input_delay", "editor_output_delay", "editor_reparse_limit",
+      "editor_tracing_messages", "editor_update_delay", "editor_chart_delay")
+
+  relevant_options.foreach(PIDE.options.value.check_name _)
+
+  protected val components =
+    PIDE.options.make_components(List(Isabelle_Logic.logic_selector(false)), relevant_options)
+}
+
+
+class Isabelle_Options2 extends Isabelle_Options("isabelle-rendering")
+{
+  // FIXME avoid hard-wired stuff
+  private val predefined =
+    (for {
+      (name, opt) <- PIDE.options.value.options.toList
+      if (name.endsWith("_color") && opt.section == "Rendering of Document Content")
+    } yield PIDE.options.make_color_component(opt))
+
+  assert(!predefined.isEmpty)
+
+  protected val components = PIDE.options.make_components(predefined, _ => false)
+}
+

@@ -2,9 +2,19 @@
 <!DOCTYPE ACTIONS SYSTEM "actions.dtd">
 
 <ACTIONS>
-	<ACTION NAME="isabelle.session-panel">
+	<ACTION NAME="isabelle.theories-panel">
 		<CODE>
-			wm.addDockableWindow("isabelle-session");
+			wm.addDockableWindow("isabelle-theories");
+		</CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.syslog-panel">
+		<CODE>
+			wm.addDockableWindow("isabelle-syslog");
+		</CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.readme-panel">
+		<CODE>
+			wm.addDockableWindow("isabelle-readme");
 		</CODE>
 	</ACTION>
 	<ACTION NAME="isabelle.output-panel">
@@ -22,24 +32,64 @@
 			wm.addDockableWindow("isabelle-protocol");
 		</CODE>
 	</ACTION>
-	<ACTION NAME="isabelle.input-sub">
+	<ACTION NAME="isabelle.monitor-panel">
+		<CODE>
+			wm.addDockableWindow("isabelle-monitor");
+		</CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.symbols-panel">
+		<CODE>
+			wm.addDockableWindow("isabelle-symbols");
+		</CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.check-buffer">
 	  <CODE>
-	    isabelle.jedit.Isabelle.input_sub(textArea);
+	    isabelle.jedit.PIDE.check_buffer(buffer);
 	  </CODE>
 	</ACTION>
-	<ACTION NAME="isabelle.input-sup">
+	<ACTION NAME="isabelle.cancel-execution">
 	  <CODE>
-	    isabelle.jedit.Isabelle.input_sup(textArea);
+	    isabelle.jedit.PIDE.cancel_execution();
 	  </CODE>
 	</ACTION>
-	<ACTION NAME="isabelle.input-isub">
+	<ACTION NAME="isabelle.increase-font-size">
 	  <CODE>
-	    isabelle.jedit.Isabelle.input_isub(textArea);
+	    isabelle.jedit.Isabelle.increase_font_size(view);
 	  </CODE>
 	</ACTION>
-	<ACTION NAME="isabelle.input-isup">
+	<ACTION NAME="isabelle.decrease-font-size">
 	  <CODE>
-	    isabelle.jedit.Isabelle.input_isup(textArea);
+	    isabelle.jedit.Isabelle.decrease_font_size(view);
+	  </CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.control-sub">
+	  <CODE>
+	    isabelle.jedit.Isabelle.control_sub(textArea);
+	  </CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.control-sup">
+	  <CODE>
+	    isabelle.jedit.Isabelle.control_sup(textArea);
+	  </CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.control-isub">
+	  <CODE>
+	    isabelle.jedit.Isabelle.control_isub(textArea);
+	  </CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.control-isup">
+	  <CODE>
+	    isabelle.jedit.Isabelle.control_isup(textArea);
+	  </CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.control-bold">
+	  <CODE>
+	    isabelle.jedit.Isabelle.control_bold(textArea);
+	  </CODE>
+	</ACTION>
+	<ACTION NAME="isabelle.control-reset">
+	  <CODE>
+	    isabelle.jedit.Isabelle.control_reset(textArea);
 	  </CODE>
 	</ACTION>
 	<ACTION NAME="isabelle.input-bsub">
@@ -50,21 +100,6 @@
 	<ACTION NAME="isabelle.input-bsup">
 	  <CODE>
 	    isabelle.jedit.Isabelle.input_bsup(textArea);
-	  </CODE>
-	</ACTION>
-	<ACTION NAME="isabelle.input-bold">
-	  <CODE>
-	    isabelle.jedit.Isabelle.input_bold(textArea);
-	  </CODE>
-	</ACTION>
-	<ACTION NAME="isabelle.check-buffer">
-	  <CODE>
-	    isabelle.jedit.Isabelle.check_buffer(buffer);
-	  </CODE>
-	</ACTION>
-	<ACTION NAME="isabelle.cancel-execution">
-	  <CODE>
-	    isabelle.jedit.Isabelle.cancel_execution();
 	  </CODE>
 	</ACTION>
 </ACTIONS>

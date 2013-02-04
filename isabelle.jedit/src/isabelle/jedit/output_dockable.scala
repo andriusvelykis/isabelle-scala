@@ -25,93 +25,63 @@ class Output_Dockable(view: View, position: String) extends Dockable(view, posit
 {
   Swing_Thread.require()
 
-  private val html_panel =
-    new HTML_Panel(Isabelle.font_family(), scala.math.round(Isabelle.font_size()))
-  {
-    override val handler: PartialFunction[HTML_Panel.Event, Unit] =
-    {
-      case HTML_Panel.Mouse_Click(elem, event)
-      if Protocol.Sendback.unapply(elem.getUserData(Markup.Data.name)).isDefined =>
-        val sendback = Protocol.Sendback.unapply(elem.getUserData(Markup.Data.name)).get
-        Document_View(view.getTextArea) match {
-          case Some(doc_view) =>
-            doc_view.robust_body() {
-              current_command match {
-                case Some(cmd) =>
-                  val model = doc_view.model
-                  val buffer = model.buffer
-                  val snapshot = model.snapshot()
-                  snapshot.node.command_start(cmd) match {
-                    case Some(start) if !snapshot.is_outdated =>
-                      val text = Pretty.string_of(sendback)
-                      try {
-                        buffer.beginCompoundEdit()
-                        buffer.remove(start, cmd.proper_range.length)
-                        buffer.insert(start, text)
-                      }
-                      finally { buffer.endCompoundEdit() }
-                    case _ =>
-                  }
-                case None =>
-              }
-            }
-          case None =>
-        }
-    }
-  }
-
-  set_content(html_panel)
-
 
   /* component state -- owned by Swing thread */
 
   private var zoom_factor = 100
-  private var show_tracing = false
-  private var follow_caret = true
-  private var current_command: Option[Command] = None
+  private var do_update = true
+  private var current_snapshot = Document.State.init.snapshot()
+  private var current_state = Command.empty.init_state
+  private var current_output: List[XML.Tree] = Nil
+
+
+  /* pretty text area */
+
+  val pretty_text_area = new Pretty_Text_Area(view)
+  set_content(pretty_text_area)
 
 
   private def handle_resize()
   {
-    Swing_Thread.now {
-      html_panel.resize(Isabelle.font_family(),
-        scala.math.round(Isabelle.font_size() * zoom_factor / 100))
-    }
+    Swing_Thread.require()
+
+    pretty_text_area.resize(Rendering.font_family(),
+      (Rendering.font_size("jedit_font_scale") * zoom_factor / 100).round)
   }
 
-  private def handle_perspective(): Boolean =
-    Swing_Thread.now {
-      Document_View(view.getTextArea) match {
-        case Some(doc_view) =>
-          val cmd = doc_view.selected_command()
-          if (current_command == cmd) false
-          else { current_command = cmd; true }
-        case None => false
-      }
-    }
-
-  private def handle_update(restriction: Option[Set[Command]] = None)
+  private def handle_update(follow: Boolean, restriction: Option[Set[Command]])
   {
-    Swing_Thread.now {
-      if (follow_caret) handle_perspective()
+    Swing_Thread.require()
+
+    val (new_snapshot, new_state) =
       Document_View(view.getTextArea) match {
         case Some(doc_view) =>
-          current_command match {
-            case Some(cmd) if !restriction.isDefined || restriction.get.contains(cmd) =>
-              val snapshot = doc_view.model.snapshot()
-              val filtered_results =
-                snapshot.state.command_state(snapshot.version, cmd).results.iterator
-                  .map(_._2).filter(
-                  { // FIXME not scalable
-                    case XML.Elem(Markup(Isabelle_Markup.TRACING, _), _) => show_tracing
-                    case _ => true
-                  }).toList
-              html_panel.render(filtered_results)
-            case _ =>
+          val snapshot = doc_view.model.snapshot()
+          if (follow && !snapshot.is_outdated) {
+            snapshot.node.command_at(doc_view.text_area.getCaretPosition).map(_._1) match {
+              case Some(cmd) =>
+                (snapshot, snapshot.state.command_state(snapshot.version, cmd))
+              case None =>
+                (Document.State.init.snapshot(), Command.empty.init_state)
+            }
           }
-        case None =>
+          else (current_snapshot, current_state)
+        case None => (current_snapshot, current_state)
       }
-    }
+
+    val new_output =
+      if (!restriction.isDefined || restriction.get.contains(new_state.command)) {
+        val rendering = Rendering(new_snapshot, PIDE.options.value)
+        rendering.output_messages(new_state)
+      }
+      else current_output
+
+    if (new_output != current_output)
+      pretty_text_area.update(new_snapshot, new_state.results, Pretty.separate(new_output))
+
+    current_snapshot = new_snapshot
+    current_state = new_state
+    current_output = new_output
   }
 
 
@@ -120,9 +90,13 @@ class Output_Dockable(view: View, position: String) extends Dockable(view, posit
   private val main_actor = actor {
     loop {
       react {
-        case Session.Global_Settings => handle_resize()
-        case changed: Session.Commands_Changed => handle_update(Some(changed.commands))
-        case Session.Caret_Focus => if (follow_caret && handle_perspective()) handle_update()
+        case _: Session.Global_Options =>
+          Swing_Thread.later { handle_resize() }
+        case changed: Session.Commands_Changed =>
+          val restriction = if (changed.assignment) None else Some(changed.commands)
+          Swing_Thread.later { handle_update(do_update, restriction) }
+        case Session.Caret_Focus =>
+          Swing_Thread.later { handle_update(do_update, None) }
         case bad => System.err.println("Output_Dockable: ignoring bad message " + bad)
       }
     }
@@ -130,54 +104,61 @@ class Output_Dockable(view: View, position: String) extends Dockable(view, posit
 
   override def init()
   {
-    Isabelle.session.global_settings += main_actor
-    Isabelle.session.commands_changed += main_actor
-    Isabelle.session.caret_focus += main_actor
+    Swing_Thread.require()
+
+    PIDE.session.global_options += main_actor
+    PIDE.session.commands_changed += main_actor
+    PIDE.session.caret_focus += main_actor
+    handle_update(true, None)
   }
 
   override def exit()
   {
-    Isabelle.session.global_settings -= main_actor
-    Isabelle.session.commands_changed -= main_actor
-    Isabelle.session.caret_focus -= main_actor
-    delay_resize(false)
+    Swing_Thread.require()
+
+    PIDE.session.global_options -= main_actor
+    PIDE.session.commands_changed -= main_actor
+    PIDE.session.caret_focus -= main_actor
+    delay_resize.revoke()
   }
 
 
   /* resize */
 
   private val delay_resize =
-    Swing_Thread.delay_first(Isabelle.session.update_delay) { handle_resize() }
+    Swing_Thread.delay_first(PIDE.options.seconds("editor_update_delay")) { handle_resize() }
 
   addComponentListener(new ComponentAdapter {
-    override def componentResized(e: ComponentEvent) { delay_resize(true) }
+    override def componentResized(e: ComponentEvent) { delay_resize.invoke() }
   })
 
 
   /* controls */
 
-  private val zoom = new Library.Zoom_Box(factor => { zoom_factor = factor; handle_resize() })
+  private val zoom = new Library_UI.Zoom_Box(factor => { zoom_factor = factor; handle_resize() })
   zoom.tooltip = "Zoom factor for basic font size"
 
-  private val tracing = new CheckBox("Tracing") {
-    reactions += { case ButtonClicked(_) => show_tracing = this.selected; handle_update() }
-  }
-  tracing.selected = show_tracing
-  tracing.tooltip = "Indicate output of tracing messages"
-
   private val auto_update = new CheckBox("Auto update") {
-    reactions += { case ButtonClicked(_) => follow_caret = this.selected; handle_update() }
+    reactions += {
+      case ButtonClicked(_) => do_update = this.selected; handle_update(do_update, None) }
   }
-  auto_update.selected = follow_caret
+  auto_update.selected = do_update
   auto_update.tooltip = "Indicate automatic update following cursor movement"
 
   private val update = new Button("Update") {
-    reactions += { case ButtonClicked(_) => handle_perspective(); handle_update() }
+    reactions += { case ButtonClicked(_) => handle_update(true, None) }
   }
   update.tooltip = "Update display according to the command at cursor position"
 
-  private val controls = new FlowPanel(FlowPanel.Alignment.Right)(zoom, tracing, auto_update, update)
-  add(controls.peer, BorderLayout.NORTH)
+  private val detach = new Button("Detach") {
+    reactions += {
+      case ButtonClicked(_) =>
+        Info_Dockable(view, current_snapshot,
+          current_state.results, Pretty.separate(current_output))
+    }
+  }
+  detach.tooltip = "Detach window with static copy of current output"
 
-  handle_update()
+  private val controls = new FlowPanel(FlowPanel.Alignment.Right)(zoom, auto_update, update, detach)
+  add(controls.peer, BorderLayout.NORTH)
 }

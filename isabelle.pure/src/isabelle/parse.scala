@@ -7,6 +7,7 @@ Generic parsers for Isabelle/Isar outer syntax.
 package isabelle
 
 import scala.util.parsing.combinator.Parsers
+import scala.annotation.tailrec
 
 
 object Parse
@@ -17,10 +18,10 @@ object Parse
   {
     type Elem = Token
 
-    def filter_proper = true
+    def filter_proper: Boolean = true
 
-    private def proper(in: Input): Input =
-      if (in.atEnd || !in.first.is_ignored || !filter_proper) in
+    @tailrec private def proper(in: Input): Input =
+      if (!filter_proper || in.atEnd || in.first.is_proper) in
       else proper(in.rest)
 
     def token(s: String, pred: Elem => Boolean): Parser[Elem] = new Parser[Elem]
@@ -28,7 +29,7 @@ object Parse
       def apply(raw_input: Input) =
       {
         val in = proper(raw_input)
-        if (in.atEnd) Failure(s + " expected (past end-of-file!)", in)
+        if (in.atEnd) Failure(s + " expected,\nbut end-of-input was found", in)
         else {
           val token = in.first
           if (pred(token)) Success(token, proper(in.rest))
@@ -43,23 +44,26 @@ object Parse
       }
     }
 
-    def not_eof: Parser[Elem] = token("input token", _ => true)
-    def eof: Parser[Unit] = not(not_eof)
-
     def atom(s: String, pred: Elem => Boolean): Parser[String] =
       token(s, pred) ^^ (_.content)
 
+    def command(name: String): Parser[String] =
+      atom("command " + quote(name), tok => tok.is_command && tok.source == name)
+
     def keyword(name: String): Parser[String] =
-      atom(Token.Kind.KEYWORD.toString + " " + quote(name),
-        tok => tok.kind == Token.Kind.KEYWORD && tok.content == name)
+      atom("keyword " + quote(name), tok => tok.is_keyword && tok.source == name)
 
     def string: Parser[String] = atom("string", _.is_string)
+    def nat: Parser[Int] = atom("natural number", _.is_nat) ^^ (s => Integer.parseInt(s))
     def name: Parser[String] = atom("name declaration", _.is_name)
     def xname: Parser[String] = atom("name reference", _.is_xname)
     def text: Parser[String] = atom("text", _.is_text)
     def ML_source: Parser[String] = atom("ML source", _.is_text)
     def doc_source: Parser[String] = atom("document source", _.is_text)
-    def path: Parser[String] = atom("file name/path specification", _.is_name)
+    def path: Parser[String] =
+      atom("file name/path specification", tok => tok.is_name && Path.is_ok(tok.content))
+    def theory_name: Parser[String] =
+      atom("theory name", tok => tok.is_name && Thy_Load.is_ok(tok.content))
 
     private def tag_name: Parser[String] =
       atom("tag name", tok =>
@@ -72,7 +76,14 @@ object Parse
     /* wrappers */
 
     def parse[T](p: Parser[T], in: Token.Reader): ParseResult[T] = p(in)
-    def parse_all[T](p: Parser[T], in: Token.Reader): ParseResult[T] = parse(phrase(p), in)
+
+    def parse_all[T](p: Parser[T], in: Token.Reader): ParseResult[T] =
+    {
+      val result = parse(p, in)
+      val rest = proper(result.next)
+      if (result.successful && !rest.atEnd) Error("bad input", rest)
+      else result
+    }
   }
 }
 

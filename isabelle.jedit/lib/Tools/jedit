@@ -8,24 +8,39 @@
 ## sources
 
 declare -a SOURCES=(
+  "src/active.scala"
   "src/dockable.scala"
   "src/document_model.scala"
   "src/document_view.scala"
+  "src/fold_handling.scala"
+  "src/graphview_dockable.scala"
   "src/html_panel.scala"
+  "src/hyperlink.scala"
+  "src/info_dockable.scala"
+  "src/isabelle.scala"
   "src/isabelle_encoding.scala"
-  "src/isabelle_hyperlinks.scala"
+  "src/isabelle_logic.scala"
   "src/isabelle_options.scala"
-  "src/isabelle_rendering.scala"
   "src/isabelle_sidekick.scala"
+  "src/jedit_lib.scala"
+  "src/jedit_main.scala"
+  "src/jedit_options.scala"
   "src/jedit_thy_load.scala"
+  "src/monitor_dockable.scala"
   "src/output_dockable.scala"
   "src/plugin.scala"
+  "src/pretty_text_area.scala"
+  "src/pretty_tooltip.scala"
   "src/protocol_dockable.scala"
   "src/raw_output_dockable.scala"
+  "src/readme_dockable.scala"
+  "src/rendering.scala"
+  "src/rich_text_area.scala"
   "src/scala_console.scala"
-  "src/session_dockable.scala"
-  "src/text_area_painter.scala"
+  "src/symbols_dockable.scala"
+  "src/syslog_dockable.scala"
   "src/text_overview.scala"
+  "src/theories_dockable.scala"
   "src/token_markup.scala"
 )
 
@@ -33,6 +48,7 @@ declare -a RESOURCES=(
   "src/actions.xml"
   "src/dockables.xml"
   "src/Isabelle.props"
+  "src/jEdit.props"
   "src/services.xml"
 )
 
@@ -50,15 +66,17 @@ function usage()
   echo "    -J OPTION    add JVM runtime option"
   echo "                 (default JEDIT_JAVA_OPTIONS=$JEDIT_JAVA_OPTIONS)"
   echo "    -b           build only"
-  echo "    -d           enable debugger"
+  echo "    -d DIR       include session directory"
   echo "    -f           fresh build"
   echo "    -j OPTION    add jEdit runtime option"
   echo "                 (default JEDIT_OPTIONS=$JEDIT_OPTIONS)"
-  echo "    -l NAME      logic image name (default ISABELLE_LOGIC=$ISABELLE_LOGIC)"
+  echo "    -l NAME      logic session name"
   echo "    -m MODE      add print mode for output"
+  echo "    -n           no build dialog for session image on startup"
+  echo "    -s           system build mode for session image"
   echo
-  echo "Start jEdit with Isabelle plugin setup and opens theory FILES"
-  echo "(default Scratch.thy)."
+  echo "Start jEdit with Isabelle plugin setup and open theory FILES"
+  echo "(default \"$USER_HOME/Scratch.thy\")."
   echo
   exit 1
 }
@@ -79,15 +97,19 @@ function failed()
 
 # options
 
+declare -a BUILD_DIALOG_OPTIONS=(-L jedit_logic)
+
 BUILD_ONLY=false
 BUILD_JARS="jars"
-JEDIT_LOGIC="$ISABELLE_LOGIC"
+JEDIT_SESSION_DIRS=""
+JEDIT_LOGIC=""
 JEDIT_PRINT_MODE=""
+NO_BUILD="false"
 
 function getoptions()
 {
   OPTIND=1
-  while getopts "J:bdfj:l:m:" OPT
+  while getopts "J:bd:fj:l:m:ns" OPT
   do
     case "$OPT" in
       J)
@@ -97,8 +119,13 @@ function getoptions()
         BUILD_ONLY=true
         ;;
       d)
-        JAVA_ARGS["${#JAVA_ARGS[@]}"]="-Xdebug"
-        JAVA_ARGS["${#JAVA_ARGS[@]}"]="-Xrunjdwp:transport=dt_socket,server=y,suspend=n"
+        if [ -z "$JEDIT_SESSION_DIRS" ]; then
+          JEDIT_SESSION_DIRS="$OPTARG"
+        else
+          JEDIT_SESSION_DIRS="$JEDIT_SESSION_DIRS:$OPTARG"
+        fi
+        BUILD_DIALOG_OPTIONS["${#BUILD_DIALOG_OPTIONS[@]}"]="-d"
+        BUILD_DIALOG_OPTIONS["${#BUILD_DIALOG_OPTIONS[@]}"]="$OPTARG"
         ;;
       f)
         BUILD_JARS="jars_fresh"
@@ -107,6 +134,8 @@ function getoptions()
         ARGS["${#ARGS[@]}"]="$OPTARG"
         ;;
       l)
+        BUILD_DIALOG_OPTIONS["${#BUILD_DIALOG_OPTIONS[@]}"]="-l"
+        BUILD_DIALOG_OPTIONS["${#BUILD_DIALOG_OPTIONS[@]}"]="$OPTARG"
         JEDIT_LOGIC="$OPTARG"
         ;;
       m)
@@ -115,6 +144,12 @@ function getoptions()
         else
           JEDIT_PRINT_MODE="$JEDIT_PRINT_MODE,$OPTARG"
         fi
+        ;;
+      n)
+        NO_BUILD="true"
+        ;;
+      s)
+        BUILD_DIALOG_OPTIONS["${#BUILD_DIALOG_OPTIONS[@]}"]="-s"
         ;;
       \?)
         usage
@@ -138,7 +173,7 @@ shift $(($OPTIND - 1))
 # args
 
 if [ "$#" -eq 0 ]; then
-  ARGS["${#ARGS[@]}"]="Scratch.thy"
+  ARGS["${#ARGS[@]}"]="$(jvmpath "$USER_HOME/Scratch.thy")"
 else
   while [ "$#" -gt 0 ]; do
     ARGS["${#ARGS[@]}"]="$(jvmpath "$1")"
@@ -149,10 +184,18 @@ fi
 
 ## dependencies
 
-[ -e "$ISABELLE_HOME/Admin/build" ] && \
-  { "$ISABELLE_HOME/Admin/build" "$BUILD_JARS" || exit $?; }
+if [ -e "$ISABELLE_HOME/Admin/build" ]; then
+  "$ISABELLE_TOOL" browser -b || exit $?
+  if [ "$BUILD_JARS" = jars_fresh ]; then
+    "$ISABELLE_TOOL" graphview -b -f || exit $?
+  else
+    "$ISABELLE_HOME/Admin/build" "$BUILD_JARS" || exit $?
+    "$ISABELLE_TOOL" graphview -b || exit $?
+  fi
+fi
 
 PURE_JAR="$ISABELLE_HOME/lib/classes/ext/Pure.jar"
+GRAPHVIEW_JAR="$ISABELLE_HOME/lib/classes/ext/Graphview.jar"
 
 pushd "$JEDIT_HOME" >/dev/null || failed
 
@@ -161,11 +204,17 @@ JEDIT_JAR="$ISABELLE_JEDIT_BUILD_HOME/contrib/$ISABELLE_JEDIT_BUILD_VERSION/jedi
 JEDIT_JARS=(
   "$ISABELLE_JEDIT_BUILD_HOME/contrib/Console.jar"
   "$ISABELLE_JEDIT_BUILD_HOME/contrib/ErrorList.jar"
-  "$ISABELLE_JEDIT_BUILD_HOME/contrib/Hyperlinks.jar"
+  "$ISABELLE_JEDIT_BUILD_HOME/contrib/Highlight.jar"
   "$ISABELLE_JEDIT_BUILD_HOME/contrib/SideKick.jar"
   "$ISABELLE_JEDIT_BUILD_HOME/contrib/cobra.jar"
   "$ISABELLE_JEDIT_BUILD_HOME/contrib/js.jar"
 )
+
+declare -a JFREECHART_JARS=()
+for NAME in $JFREECHART_JAR_NAMES
+do
+  JFREECHART_JARS["${#JFREECHART_JARS[@]}"]="$JFREECHART_HOME/lib/$NAME"
+done
 
 
 # target
@@ -182,9 +231,12 @@ else
     OUTDATED=true
   else
     if [ -n "$ISABELLE_JEDIT_BUILD_HOME" ]; then
-      declare -a DEPS=("$JEDIT_JAR" "${JEDIT_JARS[@]}" "$PURE_JAR" "${SOURCES[@]}" "${RESOURCES[@]}")
+      declare -a DEPS=(
+        "$JEDIT_JAR" "${JEDIT_JARS[@]}" "${JFREECHART_JARS[@]}"
+        "$PURE_JAR" "$GRAPHVIEW_JAR" "${SOURCES[@]}" "${RESOURCES[@]}"
+      )
     elif [ -e "$ISABELLE_HOME/Admin/build" ]; then
-      declare -a DEPS=("$PURE_JAR" "${SOURCES[@]}" "${RESOURCES[@]}")
+      declare -a DEPS=("$PURE_JAR" "$GRAPHVIEW_JAR" "${SOURCES[@]}" "${RESOURCES[@]}")
     else
       declare -a DEPS=()
     fi
@@ -228,14 +280,14 @@ then
   perl -i -e 'while (<>) {
     if (m/NAME="javacc"/) {
       print qq,<MODE NAME="isabelle" FILE="isabelle.xml" FILE_NAME_GLOB="*.thy"/>\n\n,;
-      print qq,<MODE NAME="isabelle-session" FILE="isabelle-session.xml" FILE_NAME_GLOB="session.root"/>\n\n,; }
-    elsif (m/NAME="scheme"/) {
-      print qq,<MODE NAME="scala" FILE="scala.xml" FILE_NAME_GLOB="*.scala" />\n\n,; }
+      print qq,<MODE NAME="isabelle-options" FILE="isabelle-options.xml"/>\n\n,;
+      print qq,<MODE NAME="isabelle-root" FILE="isabelle-root.xml" FILE_NAME_GLOB="ROOT"/>\n\n,; }
     print; }' dist/modes/catalog
 
-  cp -p -R -f "${JEDIT_JARS[@]}" "$SCALA_HOME/lib/scala-compiler.jar" dist/jars/. || failed
+  cp -p -R -f "${JEDIT_JARS[@]}" dist/jars/. || failed
   (
-    for JAR in "$JEDIT_JAR" "${JEDIT_JARS[@]}" "$PURE_JAR" "$SCALA_HOME/lib/scala-compiler.jar"
+    for JAR in "$JEDIT_JAR" "${JEDIT_JARS[@]}" "${JFREECHART_JARS[@]}" "$PURE_JAR" \
+      "$GRAPHVIEW_JAR" "$SCALA_HOME/lib/scala-compiler.jar"
     do
       CLASSPATH="$CLASSPATH:$JAR"
     done
@@ -254,13 +306,12 @@ popd >/dev/null
 
 ## main
 
-# perspective
+if [ "$BUILD_ONLY" = false ]; then
+  mkdir -p "$JEDIT_SETTINGS/DockableWindowManager"
 
-mkdir -p "$JEDIT_SETTINGS/DockableWindowManager"
-
-if [ ! -e "$JEDIT_SETTINGS/perspective.xml" ]; then
-  cat > "$JEDIT_SETTINGS/DockableWindowManager/perspective-view0.xml" <<EOF
-<DOCKING LEFT="" TOP="" RIGHT="" BOTTOM="isabelle-session" LEFT_POS="0" TOP_POS="0" RIGHT_POS="250" BOTTOM_POS="250" />
+  if [ ! -e "$JEDIT_SETTINGS/perspective.xml" ]; then
+    cat > "$JEDIT_SETTINGS/DockableWindowManager/perspective-view0.xml" <<EOF
+<DOCKING LEFT="" TOP="" RIGHT="" BOTTOM="isabelle-readme" LEFT_POS="0" TOP_POS="0" RIGHT_POS="250" BOTTOM_POS="250" />
 EOF
   cat > "$JEDIT_SETTINGS/perspective.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -271,23 +322,17 @@ EOF
 </VIEW>
 </PERSPECTIVE>
 EOF
-fi
+  fi
 
+  if [ "$NO_BUILD" = false ]; then
+    "$ISABELLE_TOOL" build_dialog "${BUILD_DIALOG_OPTIONS[@]}"
+    RC="$?"
+    [ "$RC" = 0 ] || exit "$RC"
+  fi
 
-# run
-
-[ "$BUILD_ONLY" = true ] || {
-  case "$JEDIT_LOGIC" in
-    /*)
-      ;;
-    */*)
-      JEDIT_LOGIC="$(pwd -P)/$JEDIT_LOGIC"
-      ;;
-  esac
-
-  export JEDIT_LOGIC JEDIT_PRINT_MODE
+  export JEDIT_SESSION_DIRS JEDIT_LOGIC JEDIT_PRINT_MODE
 
   exec "$ISABELLE_TOOL" java "${JAVA_ARGS[@]}" \
     -jar "$(jvmpath "$JEDIT_HOME/dist/jedit.jar")" \
     "-settings=$(jvmpath "$JEDIT_SETTINGS")" "${ARGS[@]}"
-}
+fi

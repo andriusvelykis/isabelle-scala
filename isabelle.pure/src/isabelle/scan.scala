@@ -12,7 +12,7 @@ import scala.collection.immutable.PagedSeq
 import scala.util.parsing.input.{OffsetPosition, Position => InputPosition, Reader}
 import scala.util.parsing.combinator.RegexParsers
 
-import java.io.{File, InputStream, BufferedInputStream, FileInputStream}
+import java.io.{File => JFile, BufferedInputStream, FileInputStream}
 
 
 object Scan
@@ -235,6 +235,9 @@ object Scan
       }
     }.named("quoted_context")
 
+    def recover_quoted(quote: Symbol.Symbol): Parser[String] =
+      quote ~ quoted_body(quote) ^^ { case x ~ y => x + y }
+
 
     /* verbatim text */
 
@@ -266,6 +269,9 @@ object Scan
         case _ => failure("")
       }
     }.named("verbatim_context")
+
+    val recover_verbatim: Parser[String] =
+      "{*" ~ verbatim_body ^^ { case x ~ y => x + y }
 
 
     /* nested comments */
@@ -303,6 +309,11 @@ object Scan
     def comment: Parser[String] =
       comment_depth(0) ^? { case (x, d) if d == 0 => x }
 
+    def comment_content(source: String): String =
+    {
+      require(parseAll(comment, source).successful)
+      source.substring(2, source.length - 2)
+    }
     def comment_context(ctxt: Context): Parser[(String, Context)] =
     {
       val depth =
@@ -318,11 +329,8 @@ object Scan
       else failure("")
     }
 
-    def comment_content(source: String): String =
-    {
-      require(parseAll(comment, source).successful)
-      source.substring(2, source.length - 2)
-    }
+    val recover_comment: Parser[String] =
+      comment_depth(0) ^^ (_._1)
 
 
     /* outer syntax tokens */
@@ -360,20 +368,18 @@ object Scan
         (many1(Symbol.is_symbolic_char) | one(sym => Symbol.is_symbolic(sym))) ^^
         (x => Token(Token.Kind.SYM_IDENT, x))
 
-      val space = many1(Symbol.is_blank) ^^ (x => Token(Token.Kind.SPACE, x))
-
-      // FIXME check
-      val junk = many(sym => !(Symbol.is_blank(sym)))
-      val junk1 = many1(sym => !(Symbol.is_blank(sym)))
-
-      val bad_delimiter =
-        ("\"" | "`" | "{*" | "(*") ~ junk ^^ { case x ~ y => Token(Token.Kind.UNPARSED, x + y) }
-      val bad = junk1 ^^ (x => Token(Token.Kind.UNPARSED, x))
-
       val command_keyword =
         keyword ^^ (x => Token(if (is_command(x)) Token.Kind.COMMAND else Token.Kind.KEYWORD, x))
 
-      space | (bad_delimiter |
+      val space = many1(Symbol.is_blank) ^^ (x => Token(Token.Kind.SPACE, x))
+
+      val recover_delimited =
+        (recover_quoted("\"") | (recover_quoted("`") | (recover_verbatim | recover_comment))) ^^
+          (x => Token(Token.Kind.ERROR, x))
+
+      val bad = one(_ => true) ^^ (x => Token(Token.Kind.ERROR, x))
+
+      space | (recover_delimited |
         (((ident | (var_ | (type_ident | (type_var | (float | (nat_ | sym_ident)))))) |||
           command_keyword) | bad))
     }
@@ -393,63 +399,5 @@ object Scan
 
       string | (alt_string | (verb | (cmt | other)))
     }
-  }
-
-
-
-  /** read file without decoding -- enables efficient length operation **/
-
-  private class Restricted_Seq(seq: IndexedSeq[Char], start: Int, end: Int)
-    extends CharSequence
-  {
-    def charAt(i: Int): Char =
-      if (0 <= i && i < length) seq(start + i)
-      else throw new IndexOutOfBoundsException
-
-    def length: Int = end - start  // avoid potentially expensive seq.length
-
-    def subSequence(i: Int, j: Int): CharSequence =
-      if (0 <= i && i <= j && j <= length) new Restricted_Seq(seq, start + i, start + j)
-      else throw new IndexOutOfBoundsException
-
-    override def toString: String =
-    {
-      val buf = new StringBuilder(length)
-      for (offset <- start until end) buf.append(seq(offset))
-      buf.toString
-    }
-  }
-
-  abstract class Byte_Reader extends Reader[Char] { def close: Unit }
-
-  def byte_reader(file: File): Byte_Reader =
-  {
-    val stream = new BufferedInputStream(new FileInputStream(file))
-    val seq = new PagedSeq(
-      (buf: Array[Char], offset: Int, length: Int) =>
-        {
-          var i = 0
-          var c = 0
-          var eof = false
-          while (!eof && i < length) {
-            c = stream.read
-            if (c == -1) eof = true
-            else { buf(offset + i) = c.toChar; i += 1 }
-          }
-          if (i > 0) i else -1
-        })
-    val restricted_seq = new Restricted_Seq(seq, 0, file.length.toInt)
-
-    class Paged_Reader(override val offset: Int) extends Byte_Reader
-    {
-      override lazy val source: CharSequence = restricted_seq
-      def first: Char = if (seq.isDefinedAt(offset)) seq(offset) else '\032'
-      def rest: Paged_Reader = if (seq.isDefinedAt(offset)) new Paged_Reader(offset + 1) else this
-      def pos: InputPosition = new OffsetPosition(source, offset)
-      def atEnd: Boolean = !seq.isDefinedAt(offset)
-      override def drop(n: Int): Paged_Reader = new Paged_Reader(offset + n)
-      def close { stream.close }
-    }
-    new Paged_Reader(0)
   }
 }

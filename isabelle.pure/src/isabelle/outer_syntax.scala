@@ -34,31 +34,56 @@ object Outer_Syntax
     result.toString
   }
 
-  type Decl = (String, Option[(String, List[String])])
-
   val empty: Outer_Syntax = new Outer_Syntax()
+
   def init(): Outer_Syntax = new Outer_Syntax(completion = Completion.init())
+
+  def init_pure(): Outer_Syntax =
+    init() + ("theory", Keyword.THY_BEGIN) + ("ML_file", Keyword.THY_LOAD)
 }
 
 final class Outer_Syntax private(
-  keywords: Map[String, String] = Map.empty,
+  keywords: Map[String, (String, List[String])] = Map.empty,
   lexicon: Scan.Lexicon = Scan.Lexicon.empty,
   val completion: Completion = Completion.empty)
 {
-  def keyword_kind(name: String): Option[String] = keywords.get(name)
+  override def toString: String =
+    (for ((name, (kind, files)) <- keywords) yield {
+      if (kind == Keyword.MINOR) quote(name)
+      else
+        quote(name) + " :: " + quote(kind) +
+        (if (files.isEmpty) "" else " (" + commas_quote(files) + ")")
+    }).toList.sorted.mkString("keywords\n  ", " and\n  ", "")
 
-  def + (name: String, kind: String, replace: String): Outer_Syntax =
+  def keyword_kind_files(name: String): Option[(String, List[String])] = keywords.get(name)
+  def keyword_kind(name: String): Option[String] = keyword_kind_files(name).map(_._1)
+
+  def thy_load_commands: List[(String, List[String])] =
+    (for ((name, (Keyword.THY_LOAD, files)) <- keywords.iterator) yield (name, files)).toList
+
+  def + (name: String, kind: (String, List[String]), replace: Option[String]): Outer_Syntax =
     new Outer_Syntax(
       keywords + (name -> kind),
       lexicon + name,
-      if (Keyword.control(kind)) completion else completion + (name, replace))
+      if (Keyword.control(kind._1) || replace == Some("")) completion
+      else completion + (name, replace getOrElse name))
 
-  def + (name: String, kind: String): Outer_Syntax = this + (name, kind, name)
-  def + (name: String): Outer_Syntax = this + (name, Keyword.MINOR)
-  def + (decl: Outer_Syntax.Decl): Outer_Syntax =
-    decl match {
-      case ((name, Some((kind, _)))) => this + (name, kind)
-      case ((name, None)) => this + name
+  def + (name: String, kind: (String, List[String])): Outer_Syntax = this + (name, kind, Some(name))
+  def + (name: String, kind: String): Outer_Syntax = this + (name, (kind, Nil), Some(name))
+  def + (name: String, replace: Option[String]): Outer_Syntax =
+    this + (name, (Keyword.MINOR, Nil), replace)
+  def + (name: String): Outer_Syntax = this + (name, None)
+
+  def add_keywords(keywords: Thy_Header.Keywords): Outer_Syntax =
+    (this /: keywords) {
+      case (syntax, ((name, Some((kind, _)), replace))) =>
+        syntax +
+          (Symbol.decode(name), kind, replace) +
+          (Symbol.encode(name), kind, replace)
+      case (syntax, ((name, None, replace))) =>
+        syntax +
+          (Symbol.decode(name), replace) +
+          (Symbol.encode(name), replace)
     }
 
   def is_command(name: String): Boolean =
@@ -87,32 +112,34 @@ final class Outer_Syntax private(
   /* tokenize */
 
   def scan(input: Reader[Char]): List[Token] =
-  {
-    import lexicon._
+    Exn.recover  // FIXME !?
+    {
+      import lexicon._
 
-    parseAll(rep(token(is_command)), input) match {
-      case Success(tokens, _) => tokens
-      case _ => error("Unexpected failure of tokenizing input:\n" + input.source.toString)
+      parseAll(rep(token(is_command)), input) match {
+        case Success(tokens, _) => tokens
+        case _ => error("Unexpected failure of tokenizing input:\n" + input.source.toString)
+      }
     }
-  }
 
   def scan(input: CharSequence): List[Token] =
     scan(new CharSequenceReader(input))
 
   def scan_context(input: CharSequence, context: Scan.Context): (List[Token], Scan.Context) =
-  {
-    import lexicon._
+    Exn.recover  // FIXME !?
+    {
+      import lexicon._
 
-    var in: Reader[Char] = new CharSequenceReader(input)
-    val toks = new mutable.ListBuffer[Token]
-    var ctxt = context
-    while (!in.atEnd) {
-      parse(token_context(is_command, ctxt), in) match {
-        case Success((x, c), rest) => { toks += x; ctxt = c; in = rest }
-        case NoSuccess(_, rest) =>
-          error("Unexpected failure of tokenizing input:\n" + rest.source.toString)
+      var in: Reader[Char] = new CharSequenceReader(input)
+      val toks = new mutable.ListBuffer[Token]
+      var ctxt = context
+      while (!in.atEnd) {
+        parse(token_context(is_command, ctxt), in) match {
+          case Success((x, c), rest) => { toks += x; ctxt = c; in = rest }
+          case NoSuccess(_, rest) =>
+            error("Unexpected failure of tokenizing input:\n" + rest.source.toString)
+        }
       }
+      (toks.toList, ctxt)
     }
-    (toks.toList, ctxt)
-  }
 }

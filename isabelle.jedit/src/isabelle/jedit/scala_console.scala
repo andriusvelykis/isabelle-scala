@@ -15,9 +15,10 @@ import org.gjt.sp.jedit.{jEdit, JARClassLoader}
 import org.gjt.sp.jedit.MiscUtilities
 
 import java.lang.System
-import java.io.{File, OutputStream, Writer, PrintWriter}
+import java.io.{File => JFile, FileFilter, OutputStream, Writer, PrintWriter}
 
-import scala.tools.nsc.{Interpreter, GenericRunnerSettings, NewLinePrintWriter, ConsoleWriter}
+import scala.tools.nsc.{GenericRunnerSettings, NewLinePrintWriter, ConsoleWriter}
+import scala.tools.nsc.interpreter.IMain
 import scala.collection.mutable
 
 
@@ -27,19 +28,32 @@ class Scala_Console extends Shell("Scala")
 
   private def reconstruct_classpath(): String =
   {
+    def find_files(start: JFile, ok: JFile => Boolean = _ => true): List[JFile] =
+    {
+      val files = new mutable.ListBuffer[JFile]
+      val filter = new FileFilter { def accept(entry: JFile) = entry.isDirectory || ok(entry) }
+      def find_entry(entry: JFile)
+      {
+        if (ok(entry)) files += entry
+        if (entry.isDirectory) entry.listFiles(filter).foreach(find_entry)
+      }
+      find_entry(start)
+      files.toList
+    }
+
     def find_jars(start: String): List[String] =
       if (start != null)
-        Standard_System.find_files(new File(start),
+        find_files(new JFile(start),
           entry => entry.isFile && entry.getName.endsWith(".jar")).map(_.getAbsolutePath)
       else Nil
     val path = find_jars(jEdit.getSettingsDirectory) ::: find_jars(jEdit.getJEditHome)
-    path.mkString(File.pathSeparator)
+    path.mkString(JFile.pathSeparator)
   }
 
 
   /* global state -- owned by Swing thread */
 
-  private var interpreters = Map[Console, Interpreter]()
+  private var interpreters = Map[Console, IMain]()
 
   private var global_console: Console = null
   private var global_out: Output = null
@@ -50,7 +64,7 @@ class Scala_Console extends Shell("Scala")
     val buf = new StringBuilder
     override def flush()
     {
-      val str = Standard_System.decode_permissive_utf8(buf.toString)
+      val str = UTF8.decode_permissive(buf.toString)
       buf.clear
       if (global_out == null) System.out.print(str)
       else Swing_Thread.now { global_out.writeAttrs(null, str) }
@@ -103,14 +117,14 @@ class Scala_Console extends Shell("Scala")
     val settings = new GenericRunnerSettings(report_error)
     settings.classpath.value = reconstruct_classpath()
 
-    val interp = new Interpreter(settings, new PrintWriter(console_writer, true))
+    val interp = new IMain(settings, new PrintWriter(console_writer, true))
     {
       override def parentClassLoader = new JARClassLoader
     }
     interp.setContextClassLoader
     interp.bind("view", "org.gjt.sp.jedit.View", console.getView)
     interp.bind("console", "console.Console", console)
-    interp.interpret("import isabelle.jedit.Isabelle")
+    interp.interpret("import isabelle.jedit.PIDE")
 
     interpreters += (console -> interp)
   }
@@ -125,9 +139,9 @@ class Scala_Console extends Shell("Scala")
     out.print(null,
      "This shell evaluates Isabelle/Scala expressions.\n\n" +
      "The following special toplevel bindings are provided:\n" +
-     "  view      -- current jEdit/Swing view (e.g. view.getBuffer, view.getTextArea)\n" +
-     "  console   -- jEdit Console plugin\n" +
-     "  Isabelle  -- Isabelle plugin (e.g. Isabelle.session, Isabelle.document_model)\n")
+     "  view    -- current jEdit/Swing view (e.g. view.getBuffer, view.getTextArea)\n" +
+     "  console -- jEdit Console plugin\n" +
+     "  PIDE    -- Isabelle/PIDE plugin (e.g. PIDE.session, PIDE.document_model)\n")
   }
 
   override def printPrompt(console: Console, out: Output)

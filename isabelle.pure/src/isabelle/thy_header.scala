@@ -12,7 +12,7 @@ import scala.collection.mutable
 import scala.util.parsing.input.{Reader, CharSequenceReader}
 import scala.util.matching.Regex
 
-import java.io.File
+import java.io.{File => JFile}
 
 
 object Thy_Header extends Parse.Parser
@@ -26,7 +26,8 @@ object Thy_Header extends Parse.Parser
   val BEGIN = "begin"
 
   private val lexicon =
-    Scan.Lexicon("%", "(", ")", "::", ";", AND, BEGIN, HEADER, IMPORTS, KEYWORDS, THEORY, USES)
+    Scan.Lexicon("%", "(", ")", ",", "::", ";", "==",
+      AND, BEGIN, HEADER, IMPORTS, KEYWORDS, THEORY, USES)
 
 
   /* theory file name */
@@ -46,13 +47,19 @@ object Thy_Header extends Parse.Parser
   val header: Parser[Thy_Header] =
   {
     val file_name = atom("file name", _.is_name)
-    val theory_name = atom("theory name", _.is_name)
 
-    val keyword_kind =
-      atom("outer syntax keyword kind", _.is_name) ~ tags ^^ { case x ~ y => (x, y) }
+    val opt_files =
+      keyword("(") ~! (rep1sep(name, keyword(",")) <~ keyword(")")) ^^ { case _ ~ x => x } |
+      success(Nil)
+    val keyword_spec =
+      atom("outer syntax keyword specification", _.is_name) ~ opt_files ~ tags ^^
+      { case x ~ y ~ z => ((x, y), z) }
+
     val keyword_decl =
-      rep1(string) ~ opt(keyword("::") ~! keyword_kind ^^ { case _ ~ x => x }) ^^
-      { case xs ~ y => xs.map((_, y)) }
+      rep1(string) ~
+      opt(keyword("::") ~! keyword_spec ^^ { case _ ~ x => x }) ~
+      opt(keyword("==") ~! name ^^ { case _ ~ x => x }) ^^
+      { case xs ~ y ~ z => xs.map((_, y, z)) }
     val keyword_decls =
       keyword_decl ~ rep(keyword(AND) ~! keyword_decl ^^ { case _ ~ x => x }) ^^
       { case xs ~ yss => (xs :: yss).flatten }
@@ -63,7 +70,7 @@ object Thy_Header extends Parse.Parser
 
     val args =
       theory_name ~
-      (keyword(IMPORTS) ~! (rep1(theory_name)) ^^ { case _ ~ xs => xs }) ~
+      (opt(keyword(IMPORTS) ~! (rep1(theory_name))) ^^ { case None => Nil case Some(_ ~ xs) => xs }) ~
       (opt(keyword(KEYWORDS) ~! keyword_decls) ^^ { case None => Nil case Some(_ ~ xs) => xs }) ~
       (opt(keyword(USES) ~! (rep1(file))) ^^ { case None => Nil case Some(_ ~ xs) => xs }) ~
       keyword(BEGIN) ^^
@@ -102,18 +109,17 @@ object Thy_Header extends Parse.Parser
   def read(source: CharSequence): Thy_Header =
     read(new CharSequenceReader(source))
 
-  def read(file: File): Thy_Header =
-  {
-    val reader = Scan.byte_reader(file)
-    try { read(reader).map(Standard_System.decode_permissive_utf8) }
-    finally { reader.close }
-  }
+
+  /* keywords */
+
+  type Keywords = List[(String, Option[((String, List[String]), List[String])], Option[String])]
 }
 
 
 sealed case class Thy_Header(
-  name: String, imports: List[String],
-  keywords: List[Outer_Syntax.Decl],
+  name: String,
+  imports: List[String],
+  keywords: Thy_Header.Keywords,
   uses: List[(String, Boolean)])
 {
   def map(f: String => String): Thy_Header =

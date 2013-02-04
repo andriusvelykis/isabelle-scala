@@ -6,29 +6,14 @@ Detecting and recoding Isabelle symbols.
 
 package isabelle
 
-import scala.io.Source
 import scala.collection.mutable
 import scala.util.matching.Regex
+import scala.annotation.tailrec
 
 
 object Symbol
 {
   type Symbol = String
-
-
-  /* spaces */
-
-  val spc = ' '
-  val space = " "
-
-  private val static_spaces = space * 4000
-
-  def spaces(k: Int): String =
-  {
-    require(k >= 0)
-    if (k < static_spaces.length) static_spaces.substring(0, k)
-    else space * k
-  }
 
 
   /* ASCII characters */
@@ -41,41 +26,37 @@ object Symbol
     is_ascii_letter(c) || is_ascii_digit(c) || is_ascii_quasi(c)
 
   def is_ascii_identifier(s: String): Boolean =
-    s.length > 0 && is_ascii_letter(s(0)) && s.substring(1).forall(is_ascii_letdig)
+    s.length > 0 && is_ascii_letter(s(0)) && s.forall(is_ascii_letdig)
 
 
-  /* Symbol regexps */
+  /* symbol matching */
 
-  private val plain = new Regex("""(?xs)
-      [^\r\\\ud800-\udfff\ufffd] | [\ud800-\udbff][\udc00-\udfff] """)
+  private val symbol_total = new Regex("""(?xs)
+    [\ud800-\udbff][\udc00-\udfff] | \r\n |
+    \\ < (?: \^raw: [\x20-\x7e\u0100-\uffff && [^.>]]* | \^? ([A-Za-z][A-Za-z0-9_']*)? ) >? |
+    .""")
 
-  private val physical_newline = new Regex("""(?xs) \n | \r\n | \r """)
+  private def is_plain(c: Char): Boolean =
+    !(c == '\r' || c == '\\' || Character.isHighSurrogate(c))
 
-  private val symbol = new Regex("""(?xs)
-      \\ < (?:
-      \^? [A-Za-z][A-Za-z0-9_']* |
-      \^raw: [\x20-\x7e\u0100-\uffff && [^.>]]* ) >""")
-
-  private val malformed_symbol = new Regex("(?xs) (?!" + symbol + ")" +
-    """ [\ud800-\udbff\ufffd] | \\<\^? """)
-
-  val regex_total =
-    new Regex(plain + "|" + physical_newline + "|" + symbol + "|" + malformed_symbol + "| .")
-
-
-  /* basic matching */
-
-  def is_plain(c: Char): Boolean = !(c == '\r' || c == '\\' || '\ud800' <= c && c <= '\udfff')
+  def is_malformed(s: Symbol): Boolean =
+    s.length match {
+      case 1 =>
+        val c = s(0)
+        Character.isHighSurrogate(c) || Character.isLowSurrogate(c) || c == '\ufffd'
+      case 2 =>
+        val c1 = s(0)
+        val c2 = s(1)
+        !(c1 == '\r' && c2 == '\n' || Character.isSurrogatePair(c1, c2))
+      case _ => !s.endsWith(">") || s == "\\<>" || s == "\\<^>"
+    }
 
   def is_physical_newline(s: Symbol): Boolean =
     s == "\n" || s == "\r" || s == "\r\n"
 
-  def is_malformed(s: Symbol): Boolean =
-    !(s.length == 1 && is_plain(s(0))) && malformed_symbol.pattern.matcher(s).matches
-
   class Matcher(text: CharSequence)
   {
-    private val matcher = regex_total.pattern.matcher(text)
+    private val matcher = symbol_total.pattern.matcher(text)
     def apply(start: Int, end: Int): Int =
     {
       require(0 <= start && start < end && end <= text.length)
@@ -117,6 +98,16 @@ object Symbol
 
   def explode(text: CharSequence): List[Symbol] = iterator(text).toList
 
+  def advance_line_column(pos: (Int, Int), text: CharSequence): (Int, Int) =
+  {
+    var (line, column) = pos
+    for (sym <- iterator(text)) {
+      if (is_physical_newline(sym)) { line += 1; column = 1 }
+      else column += 1
+    }
+    (line, column)
+  }
+
 
   /* decoding offsets */
 
@@ -141,7 +132,7 @@ object Symbol
     {
       val sym = sym1 - 1
       val end = index.length
-      def bisect(a: Int, b: Int): Int =
+      @tailrec def bisect(a: Int, b: Int): Int =
       {
         if (a < b) {
           val c = (a + b) / 2
@@ -189,7 +180,7 @@ object Symbol
     def recode(text: String): String =
     {
       val len = text.length
-      val matcher = regex_total.pattern.matcher(text)
+      val matcher = symbol_total.pattern.matcher(text)
       val result = new StringBuilder(len)
       var i = 0
       while (i < len) {
@@ -211,15 +202,14 @@ object Symbol
   /** symbol interpretation **/
 
   private lazy val symbols =
-    new Interpretation(
-      Isabelle_System.try_read(Path.split(Isabelle_System.getenv_strict("ISABELLE_SYMBOLS"))))
+    new Interpretation(File.try_read(Path.split(Isabelle_System.getenv("ISABELLE_SYMBOLS"))))
 
   private class Interpretation(symbols_spec: String)
   {
     /* read symbols */
 
-    private val empty = new Regex("""(?xs) ^\s* (?: \#.* )? $ """)
-    private val key = new Regex("""(?xs) (.+): """)
+    private val No_Decl = new Regex("""(?xs) ^\s* (?: \#.* )? $ """)
+    private val Key = new Regex("""(?xs) (.+): """)
 
     private def read_decl(decl: String): (Symbol, Map[String, String]) =
     {
@@ -230,7 +220,7 @@ object Symbol
         props match {
           case Nil => Map()
           case _ :: Nil => err()
-          case key(x) :: y :: rest => read_props(rest) + (x -> y)
+          case Key(x) :: y :: rest => read_props(rest) + (x -> y)
           case _ => err()
         }
       }
@@ -241,9 +231,14 @@ object Symbol
     }
 
     private val symbols: List[(Symbol, Map[String, String])] =
-      Map((
-        for (decl <- split_lines(symbols_spec) if !empty.pattern.matcher(decl).matches)
-          yield read_decl(decl)): _*) toList
+      (((List.empty[(Symbol, Map[String, String])], Set.empty[Symbol]) /:
+          split_lines(symbols_spec).reverse)
+        { case (res, No_Decl()) => res
+          case ((list, known), decl) =>
+            val (sym, props) = read_decl(decl)
+            if (known(sym)) (list, known)
+            else ((sym, props) :: list, known + sym)
+        })._1
 
 
     /* misc properties */
@@ -253,6 +248,11 @@ object Symbol
       val name = new Regex("""\\<\^?([A-Za-z][A-Za-z0-9_']*)>""")
       Map((for ((sym @ name(a), _) <- symbols) yield (sym -> a)): _*)
     }
+
+    val groups: List[(String, List[Symbol])] =
+      symbols.map({ case (sym, props) => (sym, props.get("group") getOrElse "unsorted") })
+        .groupBy(_._2).toList.map({ case (group, list) => (group, list.map(_._1)) })
+        .sortBy(_._1)
 
     val abbrevs: Map[Symbol, String] =
       Map((
@@ -346,8 +346,7 @@ object Symbol
 
       "\\<^isub>", "\\<^isup>")
 
-    val blanks =
-      recode_set(space, "\t", "\n", "\u000B", "\f", "\r", "\r\n", "\\<spacespace>", "\\<^newline>")
+    val blanks = recode_set(" ", "\t", "\n", "\u000B", "\f", "\r", "\r\n", "\\<^newline>")
 
     val sym_chars =
       Set("!", "#", "$", "%", "&", "*", "+", "-", "/", "<", "=", ">", "?", "@", "^", "_", "|", "~")
@@ -375,10 +374,23 @@ object Symbol
   /* tables */
 
   def names: Map[Symbol, String] = symbols.names
+  def groups: List[(String, List[Symbol])] = symbols.groups
   def abbrevs: Map[Symbol, String] = symbols.abbrevs
 
   def decode(text: String): String = symbols.decode(text)
   def encode(text: String): String = symbols.encode(text)
+
+  def decode_strict(text: String): String =
+  {
+    val decoded = decode(text)
+    if (encode(decoded) == text) decoded
+    else {
+      val bad = new mutable.ListBuffer[Symbol]
+      for (s <- iterator(text) if encode(decode(s)) != s && !bad.contains(s))
+        bad += s
+      error("Bad Unicode symbols in text: " + commas_quote(bad))
+    }
+  }
 
   def fonts: Map[Symbol, String] = symbols.fonts
   def font_names: List[String] = symbols.font_names
@@ -399,8 +411,6 @@ object Symbol
 
   private def raw_symbolic(sym: Symbol): Boolean =
     sym.startsWith("\\<") && sym.endsWith(">") && !sym.startsWith("\\<^")
-
-
 
 
   /* control symbols */
