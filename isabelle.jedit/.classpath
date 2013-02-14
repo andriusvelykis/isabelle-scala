@@ -9,5 +9,6 @@
 	<classpathentry kind="con" path="org.eclipse.jdt.USER_LIBRARY/JFreeChart"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/isabelle.graphview"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/isabelle.pure.ui"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/isabelle.pide"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
