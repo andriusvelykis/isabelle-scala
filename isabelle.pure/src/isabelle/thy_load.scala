@@ -56,8 +56,9 @@ class Thy_Load(val loaded_theories: Set[String] = Set.empty, val base_syntax: Ou
 
   /* theory files */
 
-  private def import_name(dir: String, s: String): Document.Node.Name =
+  def import_name(base_name: Document.Node.Name, s: String): Document.Node.Name =
   {
+    val dir = base_name.dir
     val theory = Thy_Header.base_name(s)
     if (loaded_theories(theory)) Document.Node.Name(theory, "", theory)
     else {
@@ -113,7 +114,7 @@ class Thy_Load(val loaded_theories: Set[String] = Set.empty, val base_syntax: Ou
         error("Bad file name " + Thy_Load.thy_path(Path.basic(name.theory)) +
           " for theory " + quote(name1))
 
-      val imports = header.imports.map(import_name(name.dir, _))
+      val imports = header.imports.map(import_name(name, _))
       val uses = header.uses
       Document.Node.Header(imports, header.keywords, uses)
     }
