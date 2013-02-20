@@ -26,6 +26,7 @@ object Build
     def echo(msg: String) {}
     def theory(session: String, theory: String) {}
     def stopped: Boolean = false
+    def cancelled: Boolean = false
   }
 
   object Ignore_Progress extends Progress
@@ -661,6 +662,12 @@ object Build
         for ((_, (_, job)) <- running) job.terminate
         sleep(); loop(pending, running, results)
       }
+      else if (progress.cancelled) {
+        for ((_, (_, job)) <- running) job.terminate
+        progress.echo("Build CANCELLED")
+        // return already-completed results
+        results
+      }
       else
         running.find({ case (_, (_, job)) => job.is_finished }) match {
           case Some((name, (parent_heap, job))) =>
@@ -768,7 +775,9 @@ object Build
     for ((p, names) <- session_entries)
       Present.update_index(browser_info + Path.explode(p), names)
 
-    val rc = (0 /: results)({ case (rc1, (_, res)) => rc1 max res.rc })
+    val rcJobs = (0 /: results)({ case (rc1, (_, res)) => rc1 max res.rc })
+    val cancelled_rc = 130
+    val rc = if (progress.cancelled) rcJobs max cancelled_rc else rcJobs
     if (rc != 0 && (verbose || !no_build)) {
       val unfinished =
         (for ((name, res) <- results.iterator if res.rc != 0) yield name).toList
