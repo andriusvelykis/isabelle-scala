@@ -28,15 +28,12 @@
       <artifactId>scala-library</artifactId>
       <version>${scala.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.scala-lang</groupId>
+      <artifactId>scala-actors</artifactId>
+      <version>${scala.version}</version>
+    </dependency>
   </dependencies>
-  
-  <repositories>
-    <repository>
-       <id>scala-eclipse-toolchain-osgi</id>
-       <layout>p2</layout>
-       <url>http://download.scala-ide.org/scala-eclipse-toolchain-osgi-210x/</url>
-    </repository>
-  </repositories>
 
   <build>
     <sourceDirectory>${basedir}/src</sourceDirectory>
@@ -54,6 +51,7 @@
         <artifactId>target-platform-configuration</artifactId>
         <version>${tycho.version}</version>
         <configuration>
+          <pomDependencies>consider</pomDependencies>
           <environments>
             <environment>
               <os>linux</os>
