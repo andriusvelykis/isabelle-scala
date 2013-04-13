@@ -41,8 +41,8 @@ object Completion
 }
 
 final class Completion private(
-  words_lex: Scan.Lexicon = Scan.Lexicon.empty,
-  words_map: Map[String, String] = Map.empty,
+  val words_lex: Scan.Lexicon = Scan.Lexicon.empty,
+  val words_map: Map[String, String] = Map.empty,
   abbrevs_lex: Scan.Lexicon = Scan.Lexicon.empty,
   abbrevs_map: Map[String, (String, String)] = Map.empty)
 {
