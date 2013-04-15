@@ -26,6 +26,9 @@ ISABELLE_PIDE_SRC=$ISABELLE_PIDE_DIR/src/isabelle
 ISABELLE_PURE_DIR=$ISABELLE_SCALA_DIR/isabelle.pure
 ISABELLE_PURE_SRC=$ISABELLE_PURE_DIR/src/isabelle
 
+ISABELLE_PURE_UI_DIR=$ISABELLE_SCALA_DIR/isabelle.pure.ui
+ISABELLE_PURE_UI_SRC=$ISABELLE_PURE_UI_DIR/src/isabelle
+
 ISABELLE_GRAPHVIEW_DIR=$ISABELLE_SCALA_DIR/isabelle.graphview
 ISABELLE_GRAPHVIEW_SRC=$ISABELLE_GRAPHVIEW_DIR/src/isabelle/graphview
 
@@ -53,14 +56,19 @@ cd $ISABELLE_REPO_PURE_DIR
 # Clean PIDE & Pure source folders
 rm -rf $ISABELLE_PIDE_SRC && mkdir $ISABELLE_PIDE_SRC
 rm -rf $ISABELLE_PURE_SRC && mkdir $ISABELLE_PURE_SRC
+rm -rf $ISABELLE_PURE_UI_SRC && mkdir $ISABELLE_PURE_UI_SRC
 
 # Copy all *.scala files to respective PIDE and Pure projects
-find . -type f -iname '*.scala' -exec sh -c 'if grep "Module:.*PIDE" {} >/dev/null
+find . -type f -iname '*.scala' -exec sh -c 'if grep "import .*\(swing\|awt\|javafx\|jfree\)" {} >/dev/null
   then 
     cp -rf {} $0/
-  else 
+  elif grep "Module:.*PIDE" {} >/dev/null
+  then 
     cp -rf {} $1/
-  fi' $ISABELLE_PIDE_SRC $ISABELLE_PURE_SRC \;
+  else 
+    cp -rf {} $2/
+  fi' $ISABELLE_PURE_UI_SRC $ISABELLE_PIDE_SRC $ISABELLE_PURE_SRC \;
+
 
 # Copy the build-jars script
 cp -rf build-jars $ISABELLE_PURE_DIR/build-jars;
