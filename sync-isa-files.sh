@@ -59,13 +59,13 @@ rm -rf $ISABELLE_PURE_SRC && mkdir $ISABELLE_PURE_SRC
 rm -rf $ISABELLE_PURE_UI_SRC && mkdir $ISABELLE_PURE_UI_SRC
 
 # Copy all *.scala files to respective PIDE and Pure projects
-find . -type f -iname '*.scala' -exec sh -c 'if grep "import .*\(swing\|awt\|javafx\|jfree\)" {} >/dev/null
-  then 
+find . -type f -iname '*.scala' -exec sh -c 'if grep -e "import .*\(swing\|awt\|javafx\|jfree\)" -e "\(GUI\|Swing_Thread\)\." {} >/dev/null
+  then
     cp -rf {} $0/
   elif grep "Module:.*PIDE" {} >/dev/null
-  then 
+  then
     cp -rf {} $1/
-  else 
+  else
     cp -rf {} $2/
   fi' $ISABELLE_PURE_UI_SRC $ISABELLE_PIDE_SRC $ISABELLE_PURE_SRC \;
 
@@ -86,4 +86,3 @@ cp -rf src/ $ISABELLE_GRAPHVIEW_SRC/
 
 # Copy the rest of Graphview folder
 rsync --recursive --relative --times --perms --delete --exclude "src" --exclude ".classpath" --exclude ".project" --exclude ".settings" . $ISABELLE_GRAPHVIEW_DIR
-
