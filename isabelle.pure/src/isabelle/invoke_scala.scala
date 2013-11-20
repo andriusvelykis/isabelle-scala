@@ -89,14 +89,15 @@ class Invoke_Scala extends Session.Protocol_Handler
   }
 
   private def invoke_scala(
-    prover: Session.Prover, msg: Isabelle_Process.Protocol_Output): Boolean = synchronized
+    prover: Session.Prover, output: Isabelle_Process.Output): Boolean = synchronized
   {
-    msg.properties match {
+    output.properties match {
       case Markup.Invoke_Scala(name, id) =>
         futures += (id ->
           default_thread_pool.submit(() =>
             {
-              val (tag, result) = Invoke_Scala.method(name, msg.text)
+              val arg = XML.content(output.body)
+              val (tag, result) = Invoke_Scala.method(name, arg)
               fulfill(prover, id, tag, result)
             }))
         true
@@ -105,9 +106,9 @@ class Invoke_Scala extends Session.Protocol_Handler
   }
 
   private def cancel_scala(
-    prover: Session.Prover, msg: Isabelle_Process.Protocol_Output): Boolean = synchronized
+    prover: Session.Prover, output: Isabelle_Process.Output): Boolean = synchronized
   {
-    msg.properties match {
+    output.properties match {
       case Markup.Cancel_Scala(id) =>
         futures.get(id) match {
           case Some(future) => cancel(prover, id, future)

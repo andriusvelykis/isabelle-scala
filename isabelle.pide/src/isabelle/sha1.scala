@@ -56,8 +56,6 @@ object SHA1
     make_result(digest)
   }
 
-  def digest(bytes: Bytes): Digest = bytes.sha1_digest
-
-  def digest(string: String): Digest = digest(Bytes(string))
+  def digest(string: String): Digest = digest(UTF8.string_bytes(string))
 }
 

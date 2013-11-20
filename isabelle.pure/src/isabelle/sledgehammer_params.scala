@@ -37,10 +37,13 @@ object Sledgehammer_Params
     def get_provers: String = synchronized { _provers }
 
     private def sledgehammer_provers(
-      prover: Session.Prover, msg: Isabelle_Process.Protocol_Output): Boolean =
+      prover: Session.Prover, output: Isabelle_Process.Output): Boolean =
     {
-      update_provers(msg.text)
-      true
+      output.body match {
+        case Nil => update_provers(""); true
+        case List(XML.Text(s)) => update_provers(s); true
+        case _ => false
+      }
     }
 
     val functions =

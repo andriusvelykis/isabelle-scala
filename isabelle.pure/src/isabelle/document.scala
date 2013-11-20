@@ -47,8 +47,6 @@ object Document
   type Edit_Text = Edit[Text.Edit, Text.Perspective]
   type Edit_Command = Edit[Command.Edit, Command.Perspective]
 
-  type Blobs = Map[Node.Name, Bytes]
-
   object Node
   {
     val empty: Node = new Node()
@@ -62,18 +60,13 @@ object Document
       errors: List[String] = Nil)
     {
       def error(msg: String): Header = copy(errors = errors ::: List(msg))
-
-      def cat_errors(msg2: String): Header =
-        copy(errors = errors.map(msg1 => Library.cat_message(msg1, msg2)))
     }
 
     def bad_header(msg: String): Header = Header(Nil, Nil, List(msg))
 
-    val no_header = bad_header("No theory header")
-
     object Name
     {
-      val empty = Name("")
+      val empty = Name("", "", "")
 
       object Ordering extends scala.math.Ordering[Name]
       {
@@ -81,7 +74,7 @@ object Document
       }
     }
 
-    sealed case class Name(node: String, master_dir: String = "", theory: String = "")
+    sealed case class Name(node: String, dir: String, theory: String)
     {
       override def hashCode: Int = node.hashCode
       override def equals(that: Any): Boolean =
@@ -89,9 +82,7 @@ object Document
           case other: Name => node == other.node
           case _ => false
         }
-
-      def is_theory: Boolean = !theory.isEmpty
-      override def toString: String = if (is_theory) theory else node
+      override def toString: String = theory
     }
 
 
@@ -127,8 +118,6 @@ object Document
       }
     }
     case class Clear[A, B]() extends Edit[A, B]
-    case class Blob[A, B]() extends Edit[A, B]
-
     case class Edits[A, B](edits: List[A]) extends Edit[A, B]
     case class Deps[A, B](header: Header) extends Edit[A, B]
     case class Perspective[A, B](required: Boolean, visible: B, overlays: Overlays) extends Edit[A, B]
@@ -159,9 +148,6 @@ object Document
 
     final class Commands private(val commands: Linear_Set[Command])
     {
-      lazy val thy_load_commands: List[Command] =
-        commands.iterator.filter(cmd => !cmd.blobs.isEmpty).toList
-
       private lazy val full_index: (Array[(Command, Text.Offset)], Text.Range) =
       {
         val blocks = new mutable.ListBuffer[(Command, Text.Offset)]
@@ -211,7 +197,6 @@ object Document
       perspective.overlays == other_perspective.overlays
 
     def commands: Linear_Set[Command] = _commands.commands
-    def thy_load_commands: List[Command] = _commands.thy_load_commands
 
     def update_commands(new_commands: Linear_Set[Command]): Node =
       if (new_commands eq _commands.commands) this
@@ -256,14 +241,6 @@ object Document
 
     def entries: Iterator[(Node.Name, Node)] =
       graph.entries.map({ case (name, (node, _)) => (name, node) })
-
-    def thy_load_commands(file_name: Node.Name): List[Command] =
-      (for {
-        (_, node) <- entries
-        cmd <- node.thy_load_commands.iterator
-        name <- cmd.blobs_names.iterator
-        if name == file_name
-      } yield cmd).toList
 
     def descendants(names: List[Node.Name]): List[Node.Name] = graph.all_succs(names)
     def topological_order: List[Node.Name] = graph.topological_order
@@ -411,7 +388,6 @@ object Document
 
   final case class State private(
     val versions: Map[Document_ID.Version, Version] = Map.empty,
-    val blobs: Set[SHA1.Digest] = Set.empty,   // inlined files
     val commands: Map[Document_ID.Command, Command.State] = Map.empty,  // static markup from define_command
     val execs: Map[Document_ID.Exec, Command.State] = Map.empty,  // dynamic markup from execution
     val assignments: Map[Document_ID.Version, State.Assignment] = Map.empty,
@@ -425,9 +401,6 @@ object Document
       copy(versions = versions + (id -> version),
         assignments = assignments + (id -> assignment.unfinished))
     }
-
-    def define_blob(digest: SHA1.Digest): State = copy(blobs = blobs + digest)
-    def defined_blob(digest: SHA1.Digest): Boolean = blobs.contains(digest)
 
     def define_command(command: Command): State =
     {
@@ -532,7 +505,6 @@ object Document
     {
       val versions1 = versions -- removed
       val assignments1 = assignments -- removed
-      var blobs1 = Set.empty[SHA1.Digest]
       var commands1 = Map.empty[Document_ID.Command, Command.State]
       var execs1 = Map.empty[Document_ID.Exec, Command.State]
       for {
@@ -541,19 +513,14 @@ object Document
         (_, node) <- version.nodes.entries
         command <- node.commands.iterator
       } {
-        for (digest <- command.blobs_digests; if !blobs1.contains(digest))
-          blobs1 += digest
-
         if (!commands1.isDefinedAt(command.id))
           commands.get(command.id).foreach(st => commands1 += (command.id -> st))
-
         for (exec_id <- command_execs.getOrElse(command.id, Nil)) {
           if (!execs1.isDefinedAt(exec_id))
             execs.get(exec_id).foreach(st => execs1 += (exec_id -> st))
         }
       }
-      copy(versions = versions1, blobs = blobs1, commands = commands1, execs = execs1,
-        assignments = assignments1)
+      copy(versions = versions1, commands = commands1, execs = execs1, assignments = assignments1)
     }
 
     def command_state(version: Version, command: Command): Command.State =

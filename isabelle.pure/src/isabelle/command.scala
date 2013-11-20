@@ -141,16 +141,12 @@ object Command
 
   /* make commands */
 
-  def name(span: List[Token]): String =
-    span.find(_.is_command) match { case Some(tok) => tok.source case _ => "" }
-
-  type Blob = Exn.Result[(Document.Node.Name, Option[SHA1.Digest])]
+  type Span = List[Token]
 
   def apply(
     id: Document_ID.Command,
     node_name: Document.Node.Name,
-    blobs: List[Blob],
-    span: List[Token],
+    span: Span,
     results: Results = Results.empty,
     markup: Markup_Tree = Markup_Tree.empty): Command =
   {
@@ -169,15 +165,14 @@ object Command
       i += n
     }
 
-    new Command(id, node_name, blobs, span1.toList, source, results, markup)
+    new Command(id, node_name, span1.toList, source, results, markup)
   }
 
-  val empty = Command(Document_ID.none, Document.Node.Name.empty, Nil, Nil)
+  val empty = Command(Document_ID.none, Document.Node.Name.empty, Nil)
 
   def unparsed(id: Document_ID.Command, source: String, results: Results, markup: Markup_Tree)
       : Command =
-    Command(id, Document.Node.Name.empty, Nil, List(Token(Token.Kind.UNPARSED, source)),
-      results, markup)
+    Command(id, Document.Node.Name.empty, List(Token(Token.Kind.UNPARSED, source)), results, markup)
 
   def unparsed(source: String): Command =
     unparsed(Document_ID.none, source, Results.empty, Markup_Tree.empty)
@@ -215,7 +210,6 @@ object Command
 final class Command private(
     val id: Document_ID.Command,
     val node_name: Document.Node.Name,
-    val blobs: List[Command.Blob],
     val span: List[Token],
     val source: String,
     val init_results: Command.Results,
@@ -231,19 +225,11 @@ final class Command private(
   val is_malformed: Boolean = !is_ignored && (!span.head.is_command || span.exists(_.is_error))
   def is_command: Boolean = !is_ignored && !is_malformed
 
-  def name: String = Command.name(span)
+  def name: String =
+    span.find(_.is_command) match { case Some(tok) => tok.source case _ => "" }
 
   override def toString =
     id + "/" + (if (is_command) name else if (is_ignored) "IGNORED" else "MALFORMED")
-
-
-  /* blobs */
-
-  def blobs_names: List[Document.Node.Name] =
-    for (Exn.Res((name, _)) <- blobs) yield name
-
-  def blobs_digests: List[SHA1.Digest] =
-    for (Exn.Res((_, Some(digest))) <- blobs) yield digest
 
 
   /* source */

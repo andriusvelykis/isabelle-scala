@@ -58,8 +58,6 @@ class Thy_Info(thy_load: Thy_Load)
 
     def deps: List[Dep] = rev_deps.reverse
 
-    def errors: List[String] = deps.flatMap(dep => dep.header.errors)
-
     lazy val syntax: Outer_Syntax = thy_load.base_syntax.add_keywords(keywords)
 
     def loaded_theories: Set[String] =
@@ -70,7 +68,7 @@ class Thy_Info(thy_load: Thy_Load)
       val dep_files =
         rev_deps.par.map(dep =>
           Exn.capture {
-            dep.load_files(syntax).map(a => Path.explode(dep.name.master_dir) + Path.explode(a))
+            dep.load_files(syntax).map(a => Path.explode(dep.name.dir) + Path.explode(a))
           }).toList
       ((Nil: List[Path]) /: dep_files) {
         case (acc_files, files) => Exn.release(files) ::: acc_files
@@ -88,15 +86,15 @@ class Thy_Info(thy_load: Thy_Load)
     if (required.seen(name)) required
     else if (thy_load.loaded_theories(name.theory)) required + name
     else {
-      def message: String =
-        "The error(s) above occurred while examining theory " +
-          quote(name.theory) + required_by(initiators)
+      def err(msg: String): Nothing =
+        cat_error(msg, "The error(s) above occurred while examining theory " +
+          quote(name.theory) + required_by(initiators))
 
       try {
         if (initiators.contains(name)) error(cycle_msg(initiators))
         val header =
-          try { thy_load.check_thy(name).cat_errors(message) }
-          catch { case ERROR(msg) => cat_error(msg, message) }
+          try { thy_load.check_thy(name) }
+          catch { case ERROR(msg) => err(msg) }
         Dep(name, header) :: require_thys(name :: initiators, required + name, header.imports)
       }
       catch {

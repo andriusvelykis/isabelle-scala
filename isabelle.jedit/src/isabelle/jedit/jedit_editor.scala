@@ -23,14 +23,18 @@ class JEdit_Editor extends Editor[View]
   {
     Swing_Thread.require()
 
-    val edits = PIDE.document_models().flatMap(_.flushed_edits())
-    if (!edits.isEmpty) session.update(PIDE.document_blobs(), edits)
+    session.update(
+      (List.empty[Document.Edit_Text] /: JEdit_Lib.jedit_buffers().toList) {
+        case (edits, buffer) =>
+          JEdit_Lib.buffer_lock(buffer) {
+            PIDE.document_model(buffer) match {
+              case Some(model) => model.flushed_edits() ::: edits
+              case None => edits
+            }
+          }
+      }
+    )
   }
-
-  private val delay_flush =
-    Swing_Thread.delay_last(PIDE.options.seconds("editor_input_delay")) { flush() }
-
-  def invoke(): Unit = Swing_Thread.require { delay_flush.invoke() }
 
 
   /* current situation */
@@ -63,13 +67,11 @@ class JEdit_Editor extends Editor[View]
     Swing_Thread.require()
 
     val text_area = view.getTextArea
-    val buffer = view.getBuffer
-
     PIDE.document_view(text_area) match {
       case Some(doc_view) =>
         val node = snapshot.version.nodes(doc_view.model.node_name)
         val caret = snapshot.revert(text_area.getCaretPosition)
-        if (caret < buffer.getLength) {
+        if (caret < text_area.getBuffer.getLength) {
           val caret_commands = node.command_range(caret)
           if (caret_commands.hasNext) {
             val (cmd0, _) = caret_commands.next
@@ -78,15 +80,7 @@ class JEdit_Editor extends Editor[View]
           else None
         }
         else node.commands.reverse.iterator.find(cmd => !cmd.is_ignored)
-      case None =>
-        PIDE.document_model(buffer) match {
-          case Some(model) if !model.is_theory =>
-            snapshot.version.nodes.thy_load_commands(model.node_name) match {
-              case cmd :: _ => Some(cmd)
-              case Nil => None
-            }
-          case _ => None
-        }
+      case None => None
     }
   }
 
