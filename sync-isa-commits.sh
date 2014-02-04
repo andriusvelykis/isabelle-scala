@@ -33,6 +33,9 @@ AUTHOR_KRAUSS_EMAIL_REV="ed.mut.ni@ssuark"
 AUTHOR_KLEING_ID="kleing"
 AUTHOR_KLEING_NAME="Gerwin Klein"
 AUTHOR_KLEING_EMAIL_REV="ua.moc.atcin@nielk.niwreg"
+AUTHOR_LARSH_ID="Lars Hupel <lars.hupel@mytum.de>"
+AUTHOR_LARSH_NAME="Lars Hupel"
+AUTHOR_LARSH_EMAIL_REV="ed.mutym@lepuh.sral"
 
 
 FILES_MATCH='jedit\|src/Pure[^ ]*.scala\|mk-jars\|build-jars\|Graphview'
@@ -91,6 +94,8 @@ do
     [ "$AUTHOR" == "$AUTHOR_KRAUSS_ID" ] && AUTHOR_NAME="$AUTHOR_KRAUSS_NAME" && AUTHOR_EMAIL_REV="$AUTHOR_KRAUSS_EMAIL_REV";
 
     [ "$AUTHOR" == "$AUTHOR_KLEING_ID" ] && AUTHOR_NAME="$AUTHOR_KLEING_NAME" && AUTHOR_EMAIL_REV="$AUTHOR_KLEING_EMAIL_REV";
+
+    [ "$AUTHOR" == "$AUTHOR_LARSH_ID" ] && AUTHOR_NAME="$AUTHOR_LARSH_NAME" && AUTHOR_EMAIL_REV="$AUTHOR_LARSH_EMAIL_REV";
 
     [ -z "$AUTHOR_NAME" ] && echo "Unexpected author found: $AUTHOR." && exit 2;
 
