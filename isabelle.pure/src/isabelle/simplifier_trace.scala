@@ -263,6 +263,7 @@ object Simplifier_Trace
             case Some((id, _)) =>
               do_cancel(serial, id)
             case None =>
+              System.err.println("handle_cancel: unknown serial " + serial)
           }
 
         case Clear_Memory =>
