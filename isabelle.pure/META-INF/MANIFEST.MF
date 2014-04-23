@@ -2,9 +2,9 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Isabelle/Pure
 Bundle-SymbolicName: isabelle.pure
-Bundle-Version: 2013.0.1.qualifier
+Bundle-Version: 2013.2.1.qualifier
 Export-Package: isabelle
-Require-Bundle: isabelle.pide;bundle-version="2013.0.1";visibility:=reexport
+Require-Bundle: isabelle.pide;bundle-version="2013.2.1";visibility:=reexport
 Bundle-Vendor: Isabelle
 Bundle-RequiredExecutionEnvironment: JavaSE-1.7
 Import-Package: scala;version="2.10.0",
