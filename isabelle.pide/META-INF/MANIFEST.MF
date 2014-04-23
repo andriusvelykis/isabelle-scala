@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Isabelle/PIDE
 Bundle-SymbolicName: isabelle.pide
-Bundle-Version: 2013.0.1.qualifier
+Bundle-Version: 2013.2.1.qualifier
 Export-Package: isabelle
 Bundle-Vendor: Isabelle
 Bundle-RequiredExecutionEnvironment: JavaSE-1.7

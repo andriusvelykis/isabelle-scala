@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>isabelle.scala</groupId>
   <artifactId>isabelle.scala-parent</artifactId>
-  <version>2013.0.1-SNAPSHOT</version>
+  <version>2013.2.1-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Isabelle/Scala Parent</name>
@@ -123,7 +123,7 @@
                 <requireJavaVersion>
                   <version>${java.version}</version>
                 </requireJavaVersion>
-              </rules>    
+              </rules>
             </configuration>
           </execution>
         </executions>
