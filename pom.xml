@@ -17,7 +17,7 @@
   <properties>
     <tycho.version>0.17.0</tycho.version>
     <tycho-extras.version>0.17.0</tycho-extras.version>
-    <scala.version>2.10.1</scala.version>
+    <scala.version>2.10.4</scala.version>
     <java.version>1.7</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
