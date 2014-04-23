@@ -7,7 +7,8 @@ Export-Package: isabelle
 Require-Bundle: isabelle.pide;bundle-version="2013.2.1";visibility:=reexport
 Bundle-Vendor: Isabelle
 Bundle-RequiredExecutionEnvironment: JavaSE-1.7
-Import-Package: scala;version="2.10.0",
+Import-Package: org.tukaani.xz,
+ scala;version="2.10.0",
  scala.actors;version="2.10.0",
  scala.annotation;version="2.10.0",
  scala.collection;version="2.10.0",
