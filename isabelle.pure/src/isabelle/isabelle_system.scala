@@ -60,8 +60,9 @@ object Isabelle_System
       (2) ISABELLE_HOME process environment variable (e.g. inherited from running isabelle tool)
       (3) isabelle.home system property (e.g. via JVM application boot process)
   */
-  def init(isabelle_home: String = "", cygwin_root: String = ""): Unit = synchronized {
-    if (_settings.isEmpty) {
+  def init(isabelle_home: String = "", cygwin_root: String = "",
+	       force_init: Boolean = false): Unit = synchronized {
+    if (_settings.isEmpty || force_init) {
       import scala.collection.JavaConversions._
 
       def set_cygwin_root()
